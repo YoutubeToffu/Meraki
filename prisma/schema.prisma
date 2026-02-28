@@ -1,0 +1,664 @@
+// Meraki Growth Engine - Database Schema
+// A comprehensive schema for lead generation, nurturing, and sales automation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ORGANIZATION & USER MANAGEMENT
+// ============================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  domain      String?
+  logo        String?
+  plan        Plan     @default(FREE)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  leads       Lead[]
+  campaigns   Campaign[]
+  sequences   Sequence[]
+  emailTemplates EmailTemplate[]
+  integrations Integration[]
+  analytics   Analytics[]
+  aiCredits   Int      @default(1000)
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  avatar        String?
+  role          UserRole @default(MEMBER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  assignedLeads  Lead[]   @relation("AssignedTo")
+  activities     Activity[]
+  sentEmails     Email[]
+  scheduledMeetings Meeting[]
+}
+
+enum Plan {
+  FREE
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+// ============================================
+// LEAD MANAGEMENT
+// ============================================
+
+model Lead {
+  id              String      @id @default(cuid())
+  email           String
+  firstName       String?
+  lastName        String?
+  company         String?
+  jobTitle        String?
+  phone           String?
+  linkedinUrl     String?
+  website         String?
+  location        String?
+  
+  // Lead scoring & status
+  status          LeadStatus  @default(NEW)
+  score           Int         @default(0)
+  stage           LeadStage   @default(AWARENESS)
+  source          LeadSource  @default(MANUAL)
+  sourceDetail    String?
+  
+  // Custom fields as JSON
+  customFields    Json?
+  tags            String[]
+  
+  // AI-generated insights
+  aiSummary       String?
+  aiNextAction    String?
+  aiScore         Int?
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  lastContactedAt DateTime?
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  assignedToId    String?
+  assignedTo      User?       @relation("AssignedTo", fields: [assignedToId], references: [id])
+  
+  activities      Activity[]
+  emails          Email[]
+  meetings        Meeting[]
+  sequenceEnrollments SequenceEnrollment[]
+  
+  @@unique([email, organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, score])
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+  UNSUBSCRIBED
+}
+
+enum LeadStage {
+  AWARENESS
+  INTEREST
+  CONSIDERATION
+  INTENT
+  EVALUATION
+  PURCHASE
+}
+
+enum LeadSource {
+  MANUAL
+  LINKEDIN
+  WEBSITE_FORM
+  EMAIL_CAMPAIGN
+  REFERRAL
+  COLD_OUTREACH
+  INBOUND
+  EVENT
+  API
+}
+
+// ============================================
+// ACTIVITY TRACKING
+// ============================================
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  title       String
+  description String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  leadId      String
+  lead        Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  userId      String?
+  user        User?        @relation(fields: [userId], references: [id])
+  
+  @@index([leadId, createdAt])
+}
+
+enum ActivityType {
+  EMAIL_SENT
+  EMAIL_OPENED
+  EMAIL_CLICKED
+  EMAIL_REPLIED
+  LINKEDIN_CONNECT
+  LINKEDIN_MESSAGE
+  LINKEDIN_VIEW
+  CALL
+  MEETING_SCHEDULED
+  MEETING_COMPLETED
+  NOTE_ADDED
+  STATUS_CHANGED
+  STAGE_CHANGED
+  SCORE_UPDATED
+  FORM_SUBMITTED
+  PAGE_VIEWED
+  DEMO_REQUESTED
+}
+
+// ============================================
+// EMAIL CAMPAIGNS & SEQUENCES
+// ============================================
+
+model Campaign {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  type        CampaignType
+  status      CampaignStatus @default(DRAFT)
+  
+  settings    Json?
+  
+  totalSent   Int           @default(0)
+  totalOpened Int           @default(0)
+  totalClicked Int          @default(0)
+  totalReplied Int          @default(0)
+  
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  emails      Email[]
+  
+  @@index([organizationId, status])
+}
+
+enum CampaignType {
+  EMAIL_BLAST
+  DRIP
+  NEWSLETTER
+  PRODUCT_UPDATE
+  EVENT
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model Sequence {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  status      SequenceStatus @default(DRAFT)
+  
+  triggerType SequenceTrigger @default(MANUAL)
+  triggerConditions Json?
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  steps       SequenceStep[]
+  enrollments SequenceEnrollment[]
+  
+  @@index([organizationId, status])
+}
+
+enum SequenceStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum SequenceTrigger {
+  MANUAL
+  FORM_SUBMISSION
+  TAG_ADDED
+  STAGE_CHANGED
+  SCORE_THRESHOLD
+  API
+}
+
+model SequenceStep {
+  id          String       @id @default(cuid())
+  sequenceId  String
+  sequence    Sequence     @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  
+  order       Int
+  type        StepType
+  
+  delayDays   Int          @default(0)
+  delayHours  Int          @default(0)
+  
+  templateId  String?
+  template    EmailTemplate? @relation(fields: [templateId], references: [id])
+  subject     String?
+  body        String?
+  
+  linkedinAction LinkedinAction?
+  linkedinMessage String?
+  
+  taskTitle   String?
+  taskDescription String?
+  
+  useAiPersonalization Boolean @default(false)
+  aiPrompt    String?
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  @@index([sequenceId, order])
+}
+
+enum StepType {
+  EMAIL
+  LINKEDIN
+  TASK
+  WAIT
+  CONDITION
+}
+
+enum LinkedinAction {
+  CONNECT
+  MESSAGE
+  VIEW_PROFILE
+  FOLLOW
+}
+
+model SequenceEnrollment {
+  id          String                  @id @default(cuid())
+  status      EnrollmentStatus        @default(ACTIVE)
+  currentStep Int                     @default(0)
+  
+  leadId      String
+  lead        Lead                    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  sequenceId  String
+  sequence    Sequence                @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  
+  enrolledAt  DateTime                @default(now())
+  completedAt DateTime?
+  pausedAt    DateTime?
+  
+  nextStepAt  DateTime?
+  
+  @@unique([leadId, sequenceId])
+  @@index([status, nextStepAt])
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  BOUNCED
+  UNSUBSCRIBED
+}
+
+// ============================================
+// EMAIL TEMPLATES
+// ============================================
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  subject     String
+  body        String   @db.Text
+  category    String?
+  
+  variables   String[]
+  aiVariations Json?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  sequenceSteps SequenceStep[]
+  emails        Email[]
+  
+  @@index([organizationId])
+}
+
+model Email {
+  id          String      @id @default(cuid())
+  subject     String
+  body        String      @db.Text
+  status      EmailStatus @default(DRAFT)
+  
+  sentAt      DateTime?
+  openedAt    DateTime?
+  clickedAt   DateTime?
+  repliedAt   DateTime?
+  bouncedAt   DateTime?
+  
+  messageId   String?     @unique
+  threadId    String?
+  
+  createdAt   DateTime    @default(now())
+  
+  leadId      String
+  lead        Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  senderId    String?
+  sender      User?       @relation(fields: [senderId], references: [id])
+  
+  campaignId  String?
+  campaign    Campaign?   @relation(fields: [campaignId], references: [id])
+  
+  templateId  String?
+  template    EmailTemplate? @relation(fields: [templateId], references: [id])
+  
+  @@index([leadId, createdAt])
+  @@index([campaignId])
+}
+
+enum EmailStatus {
+  DRAFT
+  SCHEDULED
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  FAILED
+}
+
+// ============================================
+// MEETINGS & SCHEDULING
+// ============================================
+
+model Meeting {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  type        MeetingType   @default(CALL)
+  status      MeetingStatus @default(SCHEDULED)
+  
+  startTime   DateTime
+  endTime     DateTime
+  timezone    String        @default("UTC")
+  
+  meetingUrl  String?
+  meetingId   String?
+  
+  outcome     String?
+  notes       String?       @db.Text
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  leadId      String
+  lead        Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  hostId      String
+  host        User          @relation(fields: [hostId], references: [id])
+  
+  @@index([leadId])
+  @@index([hostId, startTime])
+}
+
+enum MeetingType {
+  CALL
+  VIDEO_CALL
+  IN_PERSON
+  DEMO
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+// ============================================
+// INTEGRATIONS
+// ============================================
+
+model Integration {
+  id          String          @id @default(cuid())
+  type        IntegrationType
+  name        String
+  status      IntegrationStatus @default(DISCONNECTED)
+  
+  accessToken String?
+  refreshToken String?
+  expiresAt   DateTime?
+  
+  settings    Json?
+  
+  lastSyncAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@unique([organizationId, type])
+}
+
+enum IntegrationType {
+  LINKEDIN
+  GMAIL
+  OUTLOOK
+  HUBSPOT
+  SALESFORCE
+  SLACK
+  CALENDLY
+  ZOOM
+  GOOGLE_CALENDAR
+  WEBHOOK
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  EXPIRED
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+model Analytics {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  
+  newLeads    Int      @default(0)
+  qualifiedLeads Int   @default(0)
+  convertedLeads Int   @default(0)
+  lostLeads   Int      @default(0)
+  
+  emailsSent  Int      @default(0)
+  emailsOpened Int     @default(0)
+  emailsClicked Int    @default(0)
+  emailsReplied Int    @default(0)
+  emailsBounced Int    @default(0)
+  
+  linkedinConnects Int @default(0)
+  linkedinMessages Int @default(0)
+  linkedinReplies Int  @default(0)
+  
+  meetingsScheduled Int @default(0)
+  meetingsCompleted Int @default(0)
+  
+  pipelineValue Int    @default(0)
+  wonValue      Int    @default(0)
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@unique([organizationId, date])
+  @@index([organizationId, date])
+}
+
+// ============================================
+// WEBSITE LEAD CAPTURE
+// ============================================
+
+model LeadForm {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String
+  
+  fields      Json
+  settings    Json?
+  theme       Json?
+  
+  views       Int      @default(0)
+  submissions Int      @default(0)
+  
+  autoSequenceId String?
+  autoTags    String[]
+  
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organizationId String
+  
+  @@unique([organizationId, slug])
+}
+
+// ============================================
+// AI CONTENT SUGGESTIONS
+// ============================================
+
+model AiSuggestion {
+  id          String   @id @default(cuid())
+  type        AiSuggestionType
+  context     Json
+  suggestion  String   @db.Text
+  confidence  Float?
+  
+  accepted    Boolean?
+  feedback    String?
+  
+  createdAt   DateTime @default(now())
+  
+  organizationId String
+  
+  @@index([organizationId, type, createdAt])
+}
+
+enum AiSuggestionType {
+  EMAIL_SUBJECT
+  EMAIL_BODY
+  LINKEDIN_MESSAGE
+  FOLLOW_UP
+  OBJECTION_RESPONSE
+  NEXT_ACTION
+  LEAD_SUMMARY
+  MEETING_PREP
+}
+
+// ============================================
+// TASK MANAGEMENT
+// ============================================
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  type        TaskType   @default(FOLLOW_UP)
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus @default(PENDING)
+  
+  dueDate     DateTime?
+  completedAt DateTime?
+  
+  leadId      String?
+  assigneeId  String?
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  organizationId String
+  
+  @@index([organizationId, status, dueDate])
+  @@index([assigneeId, status])
+}
+
+enum TaskType {
+  FOLLOW_UP
+  CALL
+  EMAIL
+  LINKEDIN
+  DEMO
+  PROPOSAL
+  OTHER
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}

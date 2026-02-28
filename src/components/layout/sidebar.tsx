@@ -1,0 +1,135 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
+import {
+  LayoutDashboard,
+  Users,
+  Mail,
+  MessageSquare,
+  Calendar,
+  BarChart3,
+  Settings,
+  Zap,
+  Target,
+  Sparkles,
+  Link2,
+  FileText,
+} from 'lucide-react'
+
+const navigation = [
+  {
+    name: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+  },
+  {
+    name: 'Leads',
+    href: '/dashboard/leads',
+    icon: Users,
+  },
+  {
+    name: 'Lead Forms',
+    href: '/dashboard/forms',
+    icon: FileText,
+  },
+  {
+    name: 'Sequences',
+    href: '/dashboard/sequences',
+    icon: Zap,
+  },
+  {
+    name: 'Campaigns',
+    href: '/dashboard/campaigns',
+    icon: Target,
+  },
+  {
+    name: 'Email Templates',
+    href: '/dashboard/templates',
+    icon: Mail,
+  },
+  {
+    name: 'LinkedIn',
+    href: '/dashboard/linkedin',
+    icon: MessageSquare,
+  },
+  {
+    name: 'Meetings',
+    href: '/dashboard/meetings',
+    icon: Calendar,
+  },
+  {
+    name: 'AI Assistant',
+    href: '/dashboard/ai',
+    icon: Sparkles,
+  },
+  {
+    name: 'Analytics',
+    href: '/dashboard/analytics',
+    icon: BarChart3,
+  },
+  {
+    name: 'Integrations',
+    href: '/dashboard/integrations',
+    icon: Link2,
+  },
+  {
+    name: 'Settings',
+    href: '/dashboard/settings',
+    icon: Settings,
+  },
+]
+
+export function Sidebar() {
+  const pathname = usePathname()
+
+  return (
+    <div className="flex h-full w-64 flex-col bg-gray-900">
+      {/* Logo */}
+      <div className="flex h-16 items-center px-6">
+        <Link href="/dashboard" className="flex items-center space-x-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          <span className="text-xl font-bold text-white">Meraki</span>
+        </Link>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 space-y-1 px-3 py-4">
+        {navigation.map((item) => {
+          const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={cn(
+                'flex items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-gray-800 text-white'
+                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              )}
+            >
+              <item.icon className="h-5 w-5" />
+              <span>{item.name}</span>
+            </Link>
+          )
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="border-t border-gray-800 p-4">
+        <div className="flex items-center space-x-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
+            TA
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-sm font-medium text-white">TalentMeta</p>
+            <p className="truncate text-xs text-gray-400">Growth Plan</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
