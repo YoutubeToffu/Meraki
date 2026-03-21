@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,76 +18,10 @@ import {
   Linkedin,
   Star,
   StarOff,
+  Loader2,
+  X,
 } from 'lucide-react'
-
-// Mock data
-const leads = [
-  {
-    id: '1',
-    firstName: 'Sarah',
-    lastName: 'Chen',
-    email: 'sarah.chen@techcorp.com',
-    company: 'TechCorp Inc',
-    jobTitle: 'Head of Talent Acquisition',
-    status: 'QUALIFIED',
-    score: 85,
-    source: 'LINKEDIN',
-    lastContactedAt: '2026-02-27T10:30:00',
-    tags: ['Enterprise', 'High Priority'],
-  },
-  {
-    id: '2',
-    firstName: 'Michael',
-    lastName: 'Rodriguez',
-    email: 'm.rodriguez@startuplabs.io',
-    company: 'Startup Labs',
-    jobTitle: 'CEO',
-    status: 'PROPOSAL',
-    score: 92,
-    source: 'WEBSITE_FORM',
-    lastContactedAt: '2026-02-26T14:15:00',
-    tags: ['Startup', 'Demo Scheduled'],
-  },
-  {
-    id: '3',
-    firstName: 'Emma',
-    lastName: 'Thompson',
-    email: 'emma.t@globalstaffing.com',
-    company: 'Global Staffing',
-    jobTitle: 'VP of Operations',
-    status: 'CONTACTED',
-    score: 65,
-    source: 'EMAIL_CAMPAIGN',
-    lastContactedAt: '2026-02-25T09:00:00',
-    tags: ['Staffing', 'Mid-Market'],
-  },
-  {
-    id: '4',
-    firstName: 'James',
-    lastName: 'Wilson',
-    email: 'jwilson@hrsolutions.com',
-    company: 'HR Solutions',
-    jobTitle: 'Director of HR',
-    status: 'NEW',
-    score: 45,
-    source: 'COLD_OUTREACH',
-    lastContactedAt: null,
-    tags: ['HR Tech'],
-  },
-  {
-    id: '5',
-    firstName: 'Lisa',
-    lastName: 'Park',
-    email: 'lisa.park@recruitpro.com',
-    company: 'RecruitPro',
-    jobTitle: 'Founder',
-    status: 'NEGOTIATION',
-    score: 95,
-    source: 'REFERRAL',
-    lastContactedAt: '2026-02-28T08:45:00',
-    tags: ['Startup', 'High Value'],
-  },
-]
+import { useToast } from '@/components/ui/use-toast'
 
 const statusColors: Record<string, string> = {
   NEW: 'bg-gray-100 text-gray-700',
@@ -99,12 +34,15 @@ const statusColors: Record<string, string> = {
 }
 
 const sourceLabels: Record<string, string> = {
+  MANUAL: 'Manual',
   LINKEDIN: 'LinkedIn',
   WEBSITE_FORM: 'Website',
   EMAIL_CAMPAIGN: 'Email',
   COLD_OUTREACH: 'Cold Outreach',
   REFERRAL: 'Referral',
   INBOUND: 'Inbound',
+  EVENT: 'Event',
+  API: 'API',
 }
 
 function getScoreColor(score: number): string {
@@ -114,9 +52,99 @@ function getScoreColor(score: number): string {
   return 'text-red-600'
 }
 
+interface Lead {
+  id: string
+  firstName: string | null
+  lastName: string | null
+  email: string
+  company: string | null
+  jobTitle: string | null
+  status: string
+  score: number
+  source: string
+  tags: string[]
+  lastContactedAt: string | null
+}
+
+async function fetchLeads(params: {
+  page: number
+  search: string
+  status: string
+  source: string
+}) {
+  const query = new URLSearchParams()
+  query.set('page', String(params.page))
+  query.set('limit', '50')
+  if (params.search) query.set('search', params.search)
+  if (params.status) query.set('status', params.status)
+  if (params.source) query.set('source', params.source)
+  const res = await fetch(`/api/leads?${query}`)
+  if (!res.ok) throw new Error('Failed to fetch leads')
+  return res.json()
+}
+
 export default function LeadsPage() {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
+  const [page, setPage] = useState(1)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newLead, setNewLead] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    company: '',
+    jobTitle: '',
+    source: 'MANUAL' as string,
+  })
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['leads', page, searchQuery, statusFilter, sourceFilter],
+    queryFn: () =>
+      fetchLeads({ page, search: searchQuery, status: statusFilter, source: sourceFilter }),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async (leadData: typeof newLead) => {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(leadData),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to create lead')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      setShowAddModal(false)
+      setNewLead({ firstName: '', lastName: '', email: '', company: '', jobTitle: '', source: 'MANUAL' })
+      toast({ title: 'Lead created successfully' })
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete lead')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      toast({ title: 'Lead deleted' })
+    },
+  })
+
+  const leads: Lead[] = data?.data || []
+  const pagination = data?.pagination || { page: 1, total: 0, totalPages: 1 }
 
   const toggleSelectAll = () => {
     if (selectedLeads.length === leads.length) {
@@ -147,13 +175,98 @@ export default function LeadsPage() {
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
-            <Button>
+            <Button onClick={() => setShowAddModal(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Lead
             </Button>
           </div>
         }
       />
+
+      {/* Add Lead Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Add New Lead</h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowAddModal(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                createMutation.mutate(newLead)
+              }}
+              className="space-y-3"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium">First Name</label>
+                  <Input
+                    value={newLead.firstName}
+                    onChange={(e) => setNewLead({ ...newLead, firstName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Last Name</label>
+                  <Input
+                    value={newLead.lastName}
+                    onChange={(e) => setNewLead({ ...newLead, lastName: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Email *</label>
+                <Input
+                  type="email"
+                  required
+                  value={newLead.email}
+                  onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Company</label>
+                <Input
+                  value={newLead.company}
+                  onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Job Title</label>
+                <Input
+                  value={newLead.jobTitle}
+                  onChange={(e) => setNewLead({ ...newLead, jobTitle: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Source</label>
+                <select
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={newLead.source}
+                  onChange={(e) => setNewLead({ ...newLead, source: e.target.value })}
+                >
+                  {Object.entries(sourceLabels).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</>
+                  ) : (
+                    'Add Lead'
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div className="p-6 space-y-4">
         {/* Filters */}
@@ -165,15 +278,18 @@ export default function LeadsPage() {
                 <Input
                   placeholder="Search leads by name, email, or company..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    setPage(1)
+                  }}
                   className="pl-9"
                 />
               </div>
-              <Button variant="outline">
-                <Filter className="mr-2 h-4 w-4" />
-                Filters
-              </Button>
-              <select className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+              >
                 <option value="">All Statuses</option>
                 <option value="NEW">New</option>
                 <option value="CONTACTED">Contacted</option>
@@ -183,12 +299,17 @@ export default function LeadsPage() {
                 <option value="WON">Won</option>
                 <option value="LOST">Lost</option>
               </select>
-              <select className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={sourceFilter}
+                onChange={(e) => { setSourceFilter(e.target.value); setPage(1) }}
+              >
                 <option value="">All Sources</option>
                 <option value="LINKEDIN">LinkedIn</option>
                 <option value="WEBSITE_FORM">Website Form</option>
                 <option value="EMAIL_CAMPAIGN">Email Campaign</option>
                 <option value="REFERRAL">Referral</option>
+                <option value="MANUAL">Manual</option>
               </select>
             </div>
           </CardContent>
@@ -210,11 +331,16 @@ export default function LeadsPage() {
                   <Button variant="outline" size="sm">
                     Add to Sequence
                   </Button>
-                  <Button variant="outline" size="sm">
-                    Update Status
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Add Tags
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      selectedLeads.forEach((id) => deleteMutation.mutate(id))
+                      setSelectedLeads([])
+                    }}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    Delete
                   </Button>
                 </div>
               </div>
@@ -222,7 +348,43 @@ export default function LeadsPage() {
           </Card>
         )}
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-red-600">Failed to load leads. Please try again.</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && !error && leads.length === 0 && (
+          <Card>
+            <CardContent className="p-12 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+                <Plus className="h-6 w-6 text-gray-600" />
+              </div>
+              <h3 className="mt-4 font-medium">No leads yet</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Get started by adding your first lead.
+              </p>
+              <Button className="mt-4" onClick={() => setShowAddModal(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Lead
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Leads Table */}
+        {!isLoading && leads.length > 0 && (
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -232,7 +394,7 @@ export default function LeadsPage() {
                     <th className="px-4 py-3 text-left">
                       <input
                         type="checkbox"
-                        checked={selectedLeads.length === leads.length}
+                        checked={selectedLeads.length === leads.length && leads.length > 0}
                         onChange={toggleSelectAll}
                         className="rounded border-gray-300"
                       />
@@ -274,25 +436,25 @@ export default function LeadsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center space-x-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-sm font-medium text-blue-600">
-                            {lead.firstName[0]}
-                            {lead.lastName[0]}
+                            {(lead.firstName?.[0] || '?')}
+                            {(lead.lastName?.[0] || '')}
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">
-                              {lead.firstName} {lead.lastName}
+                              {lead.firstName || ''} {lead.lastName || ''}
                             </p>
                             <p className="text-sm text-gray-500">{lead.email}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{lead.company}</p>
-                        <p className="text-sm text-gray-500">{lead.jobTitle}</p>
+                        <p className="font-medium text-gray-900">{lead.company || '—'}</p>
+                        <p className="text-sm text-gray-500">{lead.jobTitle || ''}</p>
                       </td>
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            statusColors[lead.status]
+                            statusColors[lead.status] || 'bg-gray-100 text-gray-700'
                           }`}
                         >
                           {lead.status.charAt(0) + lead.status.slice(1).toLowerCase()}
@@ -312,12 +474,12 @@ export default function LeadsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-sm text-gray-600">
-                          {sourceLabels[lead.source]}
+                          {sourceLabels[lead.source] || lead.source}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
-                          {lead.tags.map((tag) => (
+                          {lead.tags?.map((tag) => (
                             <span
                               key={tag}
                               className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
@@ -338,8 +500,13 @@ export default function LeadsPage() {
                           <Button variant="ghost" size="icon" className="h-8 w-8">
                             <Linkedin className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-500 hover:text-red-700"
+                            onClick={() => deleteMutation.mutate(lead.id)}
+                          >
+                            <X className="h-4 w-4" />
                           </Button>
                         </div>
                       </td>
@@ -352,19 +519,30 @@ export default function LeadsPage() {
             {/* Pagination */}
             <div className="flex items-center justify-between border-t px-4 py-3">
               <p className="text-sm text-gray-500">
-                Showing 1 to {leads.length} of {leads.length} results
+                Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
               </p>
               <div className="flex items-center space-x-2">
-                <Button variant="outline" size="sm" disabled>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage(page - 1)}
+                >
                   Previous
                 </Button>
-                <Button variant="outline" size="sm" disabled>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= pagination.totalPages}
+                  onClick={() => setPage(page + 1)}
+                >
                   Next
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
     </>
   )

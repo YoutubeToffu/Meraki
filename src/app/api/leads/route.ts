@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import prisma from '@/lib/prisma'
+import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
 // Validation schema for creating a lead
 const createLeadSchema = z.object({
@@ -21,7 +23,7 @@ const createLeadSchema = z.object({
     'INBOUND',
     'EVENT',
     'API',
-  ]).default('API'),
+  ]).default('MANUAL'),
   tags: z.array(z.string()).optional(),
   customFields: z.record(z.string(), z.any()).optional(),
 })
@@ -29,59 +31,58 @@ const createLeadSchema = z.object({
 // GET /api/leads - Get all leads with filtering
 export async function GET(request: Request) {
   try {
+    const session = await getRequiredSession()
+    const orgId = (session.user as any).organizationId
+
     const { searchParams } = new URL(request.url)
-    
-    // Parse query parameters
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
     const status = searchParams.get('status')
     const source = searchParams.get('source')
     const search = searchParams.get('search')
     const sortBy = searchParams.get('sortBy') || 'createdAt'
-    const sortOrder = searchParams.get('sortOrder') || 'desc'
+    const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc'
 
-    // Mock response - replace with actual database query
-    const leads = [
-      {
-        id: 'lead_1',
-        email: 'sarah.chen@techcorp.com',
-        firstName: 'Sarah',
-        lastName: 'Chen',
-        company: 'TechCorp Inc',
-        jobTitle: 'Head of Talent Acquisition',
-        status: 'QUALIFIED',
-        score: 85,
-        source: 'LINKEDIN',
-        tags: ['Enterprise', 'High Priority'],
-        createdAt: '2026-02-20T10:00:00Z',
-        lastContactedAt: '2026-02-27T10:30:00Z',
-      },
-      {
-        id: 'lead_2',
-        email: 'm.rodriguez@startuplabs.io',
-        firstName: 'Michael',
-        lastName: 'Rodriguez',
-        company: 'Startup Labs',
-        jobTitle: 'CEO',
-        status: 'PROPOSAL',
-        score: 92,
-        source: 'WEBSITE_FORM',
-        tags: ['Startup', 'Demo Scheduled'],
-        createdAt: '2026-02-18T14:00:00Z',
-        lastContactedAt: '2026-02-26T14:15:00Z',
-      },
-    ]
+    const where: any = { organizationId: orgId }
+
+    if (status) where.status = status
+    if (source) where.source = source
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { company: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+
+    const allowedSortFields = ['createdAt', 'updatedAt', 'score', 'firstName', 'lastName', 'company']
+    const orderField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt'
+
+    const [leads, total] = await Promise.all([
+      prisma.lead.findMany({
+        where,
+        orderBy: { [orderField]: sortOrder },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          assignedTo: { select: { id: true, name: true, email: true } },
+        },
+      }),
+      prisma.lead.count({ where }),
+    ])
 
     return NextResponse.json({
       data: leads,
       pagination: {
         page,
         limit,
-        total: leads.length,
-        totalPages: 1,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     })
   } catch (error) {
+    try { return handleAuthError(error) } catch {}
     console.error('Error fetching leads:', error)
     return NextResponse.json(
       { error: 'Failed to fetch leads' },
@@ -93,27 +94,38 @@ export async function GET(request: Request) {
 // POST /api/leads - Create a new lead
 export async function POST(request: Request) {
   try {
+    const session = await getRequiredSession()
+    const orgId = (session.user as any).organizationId
+    const userId = (session.user as any).id
+
     const body = await request.json()
-    
-    // Validate request body
     const validatedData = createLeadSchema.parse(body)
 
-    // Mock response - replace with actual database insert
-    const newLead = {
-      id: `lead_${Date.now()}`,
-      ...validatedData,
-      status: 'NEW',
-      score: 0,
-      stage: 'AWARENESS',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
+    const lead = await prisma.lead.create({
+      data: {
+        ...validatedData,
+        tags: validatedData.tags || [],
+        organizationId: orgId,
+      },
+    })
+
+    // Log activity
+    await prisma.activity.create({
+      data: {
+        type: 'NOTE_ADDED',
+        title: 'Lead created',
+        description: `Lead ${validatedData.firstName || ''} ${validatedData.lastName || ''} (${validatedData.email}) was added`,
+        leadId: lead.id,
+        userId,
+      },
+    })
 
     return NextResponse.json(
-      { data: newLead, message: 'Lead created successfully' },
+      { data: lead, message: 'Lead created successfully' },
       { status: 201 }
     )
   } catch (error) {
+    try { return handleAuthError(error) } catch {}
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Validation error', details: error.issues },

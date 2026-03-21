@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useSession, signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
   Sparkles,
   Link2,
   FileText,
+  LogOut,
 } from 'lucide-react'
 
 const navigation = [
@@ -83,6 +85,16 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { data: session } = useSession()
+
+  const userName = session?.user?.name || 'User'
+  const orgName = (session?.user as any)?.organizationName || 'Organization'
+  const initials = userName
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
 
   return (
     <div className="flex h-full w-64 flex-col bg-gray-900">
@@ -122,12 +134,19 @@ export function Sidebar() {
       <div className="border-t border-gray-800 p-4">
         <div className="flex items-center space-x-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
-            TA
+            {initials}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="truncate text-sm font-medium text-white">TalentMeta</p>
-            <p className="truncate text-xs text-gray-400">Growth Plan</p>
+            <p className="truncate text-sm font-medium text-white">{userName}</p>
+            <p className="truncate text-xs text-gray-400">{orgName}</p>
           </div>
+          <button
+            onClick={() => signOut({ callbackUrl: '/auth/login' })}
+            className="text-gray-400 hover:text-white transition-colors"
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </div>
