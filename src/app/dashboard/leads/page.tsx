@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,8 @@ import {
   Send,
   Zap,
   Check,
+  ShieldOff,
+  ShieldCheck,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 import {
@@ -74,6 +76,7 @@ interface Lead {
   source: string
   tags: string[]
   lastContactedAt: string | null
+  doNotContact?: boolean
 }
 
 async function fetchLeads(params: {
@@ -260,6 +263,22 @@ export default function LeadsPage() {
     },
   })
 
+  const toggleDncMutation = useMutation({
+    mutationFn: async ({ id, doNotContact }: { id: string; doNotContact: boolean }) => {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doNotContact }),
+      })
+      if (!res.ok) throw new Error('Failed to update lead')
+      return res.json()
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      toast({ title: variables.doNotContact ? 'Marked as Do Not Contact' : 'Removed Do Not Contact flag' })
+    },
+  })
+
   const leads: Lead[] = data?.data || []
   const pagination = data?.pagination || { page: 1, total: 0, totalPages: 1 }
 
@@ -277,6 +296,134 @@ export default function LeadsPage() {
     )
   }
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleExport = () => {
+    const allLeads: Lead[] = data?.data || []
+    if (allLeads.length === 0) {
+      toast({ title: 'No leads to export', variant: 'destructive' })
+      return
+    }
+    const headers = ['First Name','Last Name','Email','Company','Job Title','Status','Score','Source','Tags','Do Not Contact','Last Contacted']
+    const rows = allLeads.map((l) => [
+      l.firstName || '',
+      l.lastName || '',
+      l.email,
+      l.company || '',
+      l.jobTitle || '',
+      l.status,
+      String(l.score),
+      l.source,
+      (l.tags || []).join(';'),
+      l.doNotContact ? 'Yes' : 'No',
+      l.lastContactedAt || '',
+    ])
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `leads-export-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast({ title: `Exported ${allLeads.length} leads` })
+  }
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const text = await file.text()
+    const lines = text.split(/\r?\n/).filter((l) => l.trim())
+    if (lines.length < 2) {
+      toast({ title: 'CSV must have a header row and at least one data row', variant: 'destructive' })
+      return
+    }
+
+    const hdrs = parseCSVRow(lines[0]).map((h) => h.toLowerCase().trim())
+    const colMap: Record<string, string[]> = {
+      email: ['email', 'email address', 'e-mail'],
+      firstName: ['first name', 'firstname', 'first', 'given name'],
+      lastName: ['last name', 'lastname', 'last', 'surname', 'family name'],
+      company: ['company', 'organization', 'org', 'company name'],
+      jobTitle: ['job title', 'jobtitle', 'title', 'position', 'role'],
+      phone: ['phone', 'phone number', 'mobile', 'tel'],
+      linkedinUrl: ['linkedin', 'linkedin url', 'linkedinurl', 'linkedin profile'],
+      source: ['source', 'lead source'],
+    }
+    const getIdx = (field: string): number => {
+      const aliases = colMap[field] || [field]
+      return hdrs.findIndex((h) => aliases.includes(h))
+    }
+    const emailIdx = getIdx('email')
+    if (emailIdx === -1) {
+      toast({ title: 'CSV must have an "Email" column', variant: 'destructive' })
+      return
+    }
+
+    let imported = 0
+    let failed = 0
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCSVRow(lines[i])
+      const email = cols[emailIdx]?.trim()
+      if (!email || !email.includes('@')) { failed++; continue }
+
+      const leadData: Record<string, string> = { email }
+      const map: [string, number][] = [
+        ['firstName', getIdx('firstName')],
+        ['lastName', getIdx('lastName')],
+        ['company', getIdx('company')],
+        ['jobTitle', getIdx('jobTitle')],
+        ['phone', getIdx('phone')],
+        ['linkedinUrl', getIdx('linkedinUrl')],
+      ]
+      for (const [key, idx] of map) {
+        if (idx >= 0 && cols[idx]?.trim()) leadData[key] = cols[idx].trim()
+      }
+      const srcIdx = getIdx('source')
+      if (srcIdx >= 0 && cols[srcIdx]) {
+        const v = cols[srcIdx].trim().toUpperCase().replace(/\s+/g, '_')
+        if (['MANUAL','LINKEDIN','WEBSITE_FORM','EMAIL_CAMPAIGN','COLD_OUTREACH','REFERRAL','INBOUND','EVENT','API'].includes(v)) leadData.source = v
+      }
+
+      try {
+        const res = await fetch('/api/leads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(leadData),
+        })
+        if (res.ok) imported++; else failed++
+      } catch { failed++ }
+    }
+
+    queryClient.invalidateQueries({ queryKey: ['leads'] })
+    toast({ title: `Import complete: ${imported} added, ${failed} skipped` })
+  }
+
+  function parseCSVRow(row: string): string[] {
+    const result: string[] = []
+    let current = ''
+    let inQuotes = false
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i]
+      if (inQuotes) {
+        if (ch === '"') {
+          if (row[i + 1] === '"') { current += '"'; i++ }
+          else inQuotes = false
+        } else current += ch
+      } else {
+        if (ch === '"') inQuotes = true
+        else if (ch === ',') { result.push(current); current = '' }
+        else current += ch
+      }
+    }
+    result.push(current)
+    return result
+  }
+
   return (
     <>
       <Header
@@ -284,11 +431,18 @@ export default function LeadsPage() {
         description="Manage and nurture your prospects"
         action={
           <div className="flex items-center space-x-2">
-            <Button variant="outline">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".csv"
+              className="hidden"
+              onChange={handleImport}
+            />
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
               <Upload className="mr-2 h-4 w-4" />
               Import
             </Button>
-            <Button variant="outline">
+            <Button variant="outline" onClick={handleExport}>
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
@@ -584,13 +738,20 @@ export default function LeadsPage() {
                         <p className="text-sm text-gray-500">{lead.jobTitle || ''}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            statusColors[lead.status] || 'bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {lead.status.charAt(0) + lead.status.slice(1).toLowerCase()}
-                        </span>
+                        <div className="flex items-center space-x-1">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                              statusColors[lead.status] || 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {lead.status.charAt(0) + lead.status.slice(1).toLowerCase()}
+                          </span>
+                          {lead.doNotContact && (
+                            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                              <ShieldOff className="mr-0.5 h-3 w-3" />DNC
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center space-x-2">
@@ -636,6 +797,15 @@ export default function LeadsPage() {
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
                             <Linkedin className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`h-8 w-8 ${lead.doNotContact ? 'text-red-500' : 'text-gray-400'}`}
+                            title={lead.doNotContact ? 'Remove Do Not Contact' : 'Mark Do Not Contact'}
+                            onClick={() => toggleDncMutation.mutate({ id: lead.id, doNotContact: !lead.doNotContact })}
+                          >
+                            {lead.doNotContact ? <ShieldCheck className="h-4 w-4" /> : <ShieldOff className="h-4 w-4" />}
                           </Button>
                           <Button
                             variant="ghost"

@@ -19,6 +19,7 @@ const updateLeadSchema = z.object({
   tags: z.array(z.string()).optional(),
   customFields: z.record(z.string(), z.any()).optional(),
   assignedToId: z.string().optional().nullable(),
+  doNotContact: z.boolean().optional(),
 })
 
 // GET /api/leads/[id]

@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Resend } from 'resend'
+import OpenAI from 'openai'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const fromAddress = process.env.EMAIL_FROM || 'noreply@meraki.app'
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 // POST /api/sequences/process — Process pending sequence steps
 // Called via cron job or manually. Secured by CRON_SECRET header.
@@ -67,6 +69,7 @@ export async function POST(request: Request) {
             jobTitle: true,
             status: true,
             organizationId: true,
+            doNotContact: true,
           },
         },
       },
@@ -117,6 +120,33 @@ export async function POST(request: Request) {
           data: { status: 'UNSUBSCRIBED', nextStepAt: null, lockedAt: null },
         })
         details.push({ enrollmentId: enrollment.id, action: 'unsubscribed_skip' })
+        skipped++
+        continue
+      }
+
+      // === DO NOT CONTACT FILTER ===
+      if ((lead as any).doNotContact === true) {
+        await prisma.sequenceEnrollment.update({
+          where: { id: enrollment.id },
+          data: { status: 'COMPLETED', completedAt: now, nextStepAt: null, lockedAt: null },
+        })
+        details.push({ enrollmentId: enrollment.id, action: 'do_not_contact_skip' })
+        skipped++
+        continue
+      }
+
+      // === BOUNCED LEAD FILTER ===
+      // If the last email to this lead bounced, stop emailing them
+      const lastBounce = await prisma.email.findFirst({
+        where: { leadId: lead.id, status: 'BOUNCED' },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (lastBounce) {
+        await prisma.sequenceEnrollment.update({
+          where: { id: enrollment.id },
+          data: { status: 'BOUNCED', nextStepAt: null, lockedAt: null },
+        })
+        details.push({ enrollmentId: enrollment.id, action: 'bounced_skip' })
         skipped++
         continue
       }
@@ -195,6 +225,35 @@ export async function POST(request: Request) {
             if (template) {
               subject = template.subject
               body = template.body
+            }
+          }
+
+          // === AI AUTO-GENERATE ===
+          // If useAiPersonalization is enabled and no subject/body, generate via GPT-4o
+          if (step.useAiPersonalization && (!subject || !body)) {
+            try {
+              const generated = await generateAiEmail(
+                lead,
+                sequence.name,
+                currentStepIndex,
+                steps.length,
+                step.aiPrompt || undefined,
+              )
+              subject = generated.subject
+              body = generated.body
+            } catch (aiErr) {
+              console.error(`AI generation failed for enrollment ${enrollment.id}:`, aiErr)
+              details.push({
+                enrollmentId: enrollment.id,
+                action: 'ai_generation_failed',
+                error: aiErr instanceof Error ? aiErr.message : 'AI generation failed',
+              })
+              errors++
+              await prisma.sequenceEnrollment.update({
+                where: { id: enrollment.id },
+                data: { lockedAt: null },
+              })
+              continue
             }
           }
 
@@ -302,6 +361,44 @@ export async function POST(request: Request) {
             },
           })
           details.push({ enrollmentId: enrollment.id, action: 'linkedin_logged' })
+        } else if (step.type === 'CONDITION') {
+          // === CONDITIONAL BRANCHING ===
+          const conditionMet = await evaluateCondition(
+            step as any,
+            lead,
+            enrollment,
+          )
+          const gotoStep = conditionMet
+            ? (step as any).trueGotoStep
+            : (step as any).falseGotoStep
+
+          if (gotoStep != null) {
+            // Jump to specified step order
+            const targetIndex = steps.findIndex((s) => s.order === gotoStep)
+            if (targetIndex >= 0) {
+              const targetStep = steps[targetIndex]
+              const delayMs = (targetStep.delayDays * 24 * 60 * 60 * 1000) + (targetStep.delayHours * 60 * 60 * 1000)
+              await prisma.sequenceEnrollment.update({
+                where: { id: enrollment.id },
+                data: {
+                  currentStep: targetIndex,
+                  nextStepAt: delayMs > 0 ? new Date(now.getTime() + delayMs) : now,
+                  lockedAt: null,
+                },
+              })
+              details.push({
+                enrollmentId: enrollment.id,
+                action: `condition_${conditionMet ? 'true' : 'false'}_goto_${gotoStep}`,
+              })
+              processed++
+              continue // skip normal advance logic
+            }
+          }
+          // If no goto specified or target not found, fall through to normal advance
+          details.push({
+            enrollmentId: enrollment.id,
+            action: `condition_${conditionMet ? 'true' : 'false'}_next`,
+          })
         }
 
         // Advance to next step
@@ -411,4 +508,145 @@ function generateTrackingId(): string {
     id += chars[Math.floor(Math.random() * chars.length)]
   }
   return id
+}
+
+// === CONDITION EVALUATION ENGINE ===
+// Checks lead activity data to determine if a condition step passes
+async function evaluateCondition(
+  step: { conditionType?: string | null; conditionValue?: string | null },
+  lead: { id: string; email: string; score?: number; tags?: string[]; status?: string },
+  enrollment: { id: string; sequenceId: string; currentStep: number },
+): Promise<boolean> {
+  const conditionType = (step.conditionType || '').toUpperCase()
+
+  switch (conditionType) {
+    case 'EMAIL_OPENED': {
+      // Did the lead open the most recent sequence email?
+      const lastEmail = await prisma.email.findFirst({
+        where: { leadId: lead.id, sequenceEnrollmentId: enrollment.id },
+        orderBy: { createdAt: 'desc' },
+      })
+      return lastEmail?.openedAt != null
+    }
+    case 'EMAIL_CLICKED': {
+      const lastEmail = await prisma.email.findFirst({
+        where: { leadId: lead.id, sequenceEnrollmentId: enrollment.id },
+        orderBy: { createdAt: 'desc' },
+      })
+      return lastEmail?.clickedAt != null
+    }
+    case 'EMAIL_REPLIED': {
+      const lastEmail = await prisma.email.findFirst({
+        where: { leadId: lead.id, sequenceEnrollmentId: enrollment.id },
+        orderBy: { createdAt: 'desc' },
+      })
+      return lastEmail?.repliedAt != null
+    }
+    case 'SCORE_ABOVE': {
+      const threshold = parseInt(step.conditionValue || '0', 10)
+      const freshLead = await prisma.lead.findUnique({
+        where: { id: lead.id },
+        select: { score: true },
+      })
+      return (freshLead?.score || 0) > threshold
+    }
+    case 'HAS_TAG': {
+      const tag = (step.conditionValue || '').toLowerCase()
+      const freshLead = await prisma.lead.findUnique({
+        where: { id: lead.id },
+        select: { tags: true },
+      })
+      return (freshLead?.tags || []).some((t) => t.toLowerCase() === tag)
+    }
+    case 'STATUS_IS': {
+      const freshLead = await prisma.lead.findUnique({
+        where: { id: lead.id },
+        select: { status: true },
+      })
+      return freshLead?.status === (step.conditionValue || '').toUpperCase()
+    }
+    default:
+      // Unknown condition → treat as true (continue)
+      return true
+  }
+}
+
+// === AI EMAIL GENERATION ===
+// Generates a personalized cold email or follow-up using GPT-4o
+async function generateAiEmail(
+  lead: {
+    firstName: string | null
+    lastName: string | null
+    email: string
+    company: string | null
+    jobTitle: string | null
+  },
+  sequenceName: string,
+  stepIndex: number,
+  totalSteps: number,
+  customPrompt?: string,
+): Promise<{ subject: string; body: string }> {
+  const isFirstEmail = stepIndex === 0
+  const isLastEmail = stepIndex === totalSteps - 1
+  const followUpNumber = stepIndex // 0-based: step 0 = initial, step 1+ = follow-ups
+
+  const systemPrompt = `You are an expert cold email copywriter. Write highly personalized, concise business emails.
+
+Rules:
+- Keep emails short (3-5 sentences for the body)
+- Be conversational and human — no corporate jargon
+- Include a clear, soft call-to-action
+- Never use generic openings like "I hope this email finds you well"
+- Reference the lead's company and role naturally
+- Do NOT include the sender's name/signature — that's added automatically
+- Respond in valid JSON format: {"subject": "...", "body": "..."}`
+
+  let userPrompt = ''
+
+  if (isFirstEmail) {
+    userPrompt = `Write an initial cold outreach email.
+
+Lead: ${lead.firstName || 'there'} ${lead.lastName || ''}
+Title: ${lead.jobTitle || 'Unknown'}
+Company: ${lead.company || 'Unknown'}
+Sequence: ${sequenceName}`
+  } else if (isLastEmail) {
+    userPrompt = `Write a final breakup email (follow-up #${followUpNumber}). This is the last email in the sequence, so keep it brief, friendly, and give them an easy way to say "not interested."
+
+Lead: ${lead.firstName || 'there'} ${lead.lastName || ''}
+Title: ${lead.jobTitle || 'Unknown'}
+Company: ${lead.company || 'Unknown'}
+Sequence: ${sequenceName}`
+  } else {
+    userPrompt = `Write follow-up email #${followUpNumber}. Reference that you reached out before but don't be pushy. Add new value or a different angle.
+
+Lead: ${lead.firstName || 'there'} ${lead.lastName || ''}
+Title: ${lead.jobTitle || 'Unknown'}
+Company: ${lead.company || 'Unknown'}
+Sequence: ${sequenceName}`
+  }
+
+  if (customPrompt) {
+    userPrompt += `\n\nAdditional context from the user:\n${customPrompt}`
+  }
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.7,
+    max_tokens: 500,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = completion.choices[0]?.message?.content || '{}'
+  const parsed = JSON.parse(raw)
+
+  if (!parsed.subject || !parsed.body) {
+    throw new Error('AI returned incomplete email (missing subject or body)')
+  }
+
+  return { subject: parsed.subject, body: parsed.body }
 }

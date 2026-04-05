@@ -23,6 +23,9 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  GitBranch,
+  Copy,
+  Sparkles,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -47,10 +50,20 @@ const stepTypeIcons: Record<string, React.ReactNode> = {
   LINKEDIN: <MessageSquare className="h-4 w-4 text-purple-600" />,
   TASK: <Check className="h-4 w-4 text-orange-600" />,
   WAIT: <Clock className="h-4 w-4 text-gray-600" />,
+  CONDITION: <GitBranch className="h-4 w-4 text-amber-600" />,
 }
 
+const conditionTypes = [
+  { value: 'EMAIL_OPENED', label: 'Previous email was opened' },
+  { value: 'EMAIL_CLICKED', label: 'Previous email was clicked' },
+  { value: 'EMAIL_REPLIED', label: 'Previous email was replied to' },
+  { value: 'SCORE_ABOVE', label: 'Lead score is above threshold' },
+  { value: 'HAS_TAG', label: 'Lead has a specific tag' },
+  { value: 'STATUS_IS', label: 'Lead status equals' },
+]
+
 interface StepDraft {
-  type: 'EMAIL' | 'LINKEDIN' | 'TASK' | 'WAIT'
+  type: 'EMAIL' | 'LINKEDIN' | 'TASK' | 'WAIT' | 'CONDITION'
   delayDays: number
   delayHours: number
   subject?: string
@@ -58,6 +71,12 @@ interface StepDraft {
   templateId?: string
   taskTitle?: string
   taskDescription?: string
+  conditionType?: string
+  conditionValue?: string
+  trueGotoStep?: number
+  falseGotoStep?: number
+  useAiGenerate?: boolean
+  aiContext?: string
 }
 
 interface Template {
@@ -145,6 +164,12 @@ export default function SequencesPage() {
             templateId: s.templateId,
             taskTitle: s.taskTitle,
             taskDescription: s.taskDescription,
+            conditionType: s.conditionType,
+            conditionValue: s.conditionValue,
+            trueGotoStep: s.trueGotoStep,
+            falseGotoStep: s.falseGotoStep,
+            useAiPersonalization: s.useAiGenerate || false,
+            aiPrompt: s.aiContext,
           })),
         }),
       })
@@ -198,6 +223,45 @@ export default function SequencesPage() {
     },
   })
 
+  const cloneMutation = useMutation({
+    mutationFn: async (sequenceId: string) => {
+      const res = await fetch('/api/sequences/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sequenceId }),
+      })
+      if (!res.ok) throw new Error('Failed to clone sequence')
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sequences'] })
+      toast({ title: data.message || 'Sequence cloned' })
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (sequenceId: string) => {
+      const res = await fetch(`/api/sequences?id=${sequenceId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to delete sequence')
+      }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sequences'] })
+      toast({ title: data.message || 'Sequence deleted' })
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    },
+  })
+
   const closeWizard = () => {
     setShowWizard(false)
     setWizardStep(1)
@@ -217,6 +281,9 @@ export default function SequencesPage() {
     }
     if (type === 'WAIT') {
       newStep.delayDays = 1
+    }
+    if (type === 'CONDITION') {
+      newStep.conditionType = 'EMAIL_OPENED'
     }
     setSteps([...steps, newStep])
     setAddingStepType(null)
@@ -361,6 +428,8 @@ export default function SequencesPage() {
                             Step {idx + 1}: {step.type}
                             {step.type === 'WAIT'
                               ? ` — ${step.delayDays}d ${step.delayHours}h`
+                              : step.type === 'CONDITION'
+                              ? ` — ${conditionTypes.find((c) => c.value === step.conditionType)?.label || step.conditionType}`
                               : step.subject
                               ? ` — ${step.subject}`
                               : step.taskTitle
@@ -397,43 +466,90 @@ export default function SequencesPage() {
                         <div className="ml-10 rounded-lg border bg-gray-50 p-4 space-y-3">
                           {(step.type === 'EMAIL') && (
                             <>
-                              <div>
-                                <label className="text-xs font-medium">Template (optional)</label>
-                                <select
-                                  className="w-full h-9 rounded-md border bg-white px-2 text-sm"
-                                  value={step.templateId || ''}
-                                  onChange={(e) => {
-                                    const tpl = templates.find((t) => t.id === e.target.value)
-                                    updateStep(idx, {
-                                      templateId: e.target.value || undefined,
-                                      subject: tpl?.subject || step.subject,
-                                      body: tpl?.body || step.body,
-                                    })
-                                  }}
+                              {/* AI Auto-Generate Toggle */}
+                              <div className="flex items-center justify-between rounded-md border p-3 bg-gradient-to-r from-purple-50 to-blue-50">
+                                <div className="flex items-center space-x-2">
+                                  <Sparkles className="h-4 w-4 text-purple-600" />
+                                  <div>
+                                    <p className="text-sm font-medium">AI Auto-Generate</p>
+                                    <p className="text-[10px] text-gray-500">AI writes personalized emails for each lead automatically</p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                    step.useAiGenerate ? 'bg-purple-600' : 'bg-gray-300'
+                                  }`}
+                                  onClick={() => updateStep(idx, {
+                                    useAiGenerate: !step.useAiGenerate,
+                                    subject: step.useAiGenerate ? step.subject : undefined,
+                                    body: step.useAiGenerate ? step.body : undefined,
+                                    templateId: step.useAiGenerate ? step.templateId : undefined,
+                                  })}
                                 >
-                                  <option value="">Write custom</option>
-                                  {templates.map((t) => (
-                                    <option key={t.id} value={t.id}>{t.name}</option>
-                                  ))}
-                                </select>
+                                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    step.useAiGenerate ? 'translate-x-6' : 'translate-x-1'
+                                  }`} />
+                                </button>
                               </div>
-                              <div>
-                                <label className="text-xs font-medium">Subject</label>
-                                <Input
-                                  value={step.subject || ''}
-                                  onChange={(e) => updateStep(idx, { subject: e.target.value })}
-                                  placeholder="Email subject line"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs font-medium">Body</label>
-                                <textarea
-                                  className="w-full min-h-[80px] rounded-md border bg-white px-3 py-2 text-sm"
-                                  value={step.body || ''}
-                                  onChange={(e) => updateStep(idx, { body: e.target.value })}
-                                  placeholder="Email body (supports {{firstName}}, {{company}} variables)"
-                                />
-                              </div>
+
+                              {step.useAiGenerate ? (
+                                <>
+                                  <div className="rounded-md bg-purple-50 border border-purple-200 p-3 text-xs text-purple-800">
+                                    <Sparkles className="inline h-3 w-3 mr-1" />
+                                    AI will auto-generate a personalized subject + body for each lead using their name, company, job title, and sequence context.
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-medium">Context / Instructions for AI (optional)</label>
+                                    <textarea
+                                      className="w-full min-h-[60px] rounded-md border bg-white px-3 py-2 text-sm"
+                                      value={step.aiContext || ''}
+                                      onChange={(e) => updateStep(idx, { aiContext: e.target.value })}
+                                      placeholder="e.g. This is follow-up #2. Mention our 30% cost savings. Keep it short and casual. Reference their recent Series B funding."
+                                    />
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>
+                                    <label className="text-xs font-medium">Template (optional)</label>
+                                    <select
+                                      className="w-full h-9 rounded-md border bg-white px-2 text-sm"
+                                      value={step.templateId || ''}
+                                      onChange={(e) => {
+                                        const tpl = templates.find((t) => t.id === e.target.value)
+                                        updateStep(idx, {
+                                          templateId: e.target.value || undefined,
+                                          subject: tpl?.subject || step.subject,
+                                          body: tpl?.body || step.body,
+                                        })
+                                      }}
+                                    >
+                                      <option value="">Write custom</option>
+                                      {templates.map((t) => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-medium">Subject</label>
+                                    <Input
+                                      value={step.subject || ''}
+                                      onChange={(e) => updateStep(idx, { subject: e.target.value })}
+                                      placeholder="Email subject line"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-medium">Body</label>
+                                    <textarea
+                                      className="w-full min-h-[80px] rounded-md border bg-white px-3 py-2 text-sm"
+                                      value={step.body || ''}
+                                      onChange={(e) => updateStep(idx, { body: e.target.value })}
+                                      placeholder="Email body (supports {{firstName}}, {{company}} variables)"
+                                    />
+                                  </div>
+                                </>
+                              )}
                             </>
                           )}
                           {step.type === 'TASK' && (
@@ -453,6 +569,62 @@ export default function SequencesPage() {
                                   value={step.taskDescription || ''}
                                   onChange={(e) => updateStep(idx, { taskDescription: e.target.value })}
                                 />
+                              </div>
+                            </>
+                          )}
+                          {step.type === 'CONDITION' && (
+                            <>
+                              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                                <GitBranch className="inline h-3 w-3 mr-1" />
+                                Condition steps evaluate a rule and branch your sequence accordingly.
+                              </div>
+                              <div>
+                                <label className="text-xs font-medium">Condition</label>
+                                <select
+                                  className="w-full h-9 rounded-md border bg-white px-2 text-sm"
+                                  value={step.conditionType || 'EMAIL_OPENED'}
+                                  onChange={(e) => updateStep(idx, { conditionType: e.target.value, conditionValue: '' })}
+                                >
+                                  {conditionTypes.map((ct) => (
+                                    <option key={ct.value} value={ct.value}>{ct.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              {(step.conditionType === 'SCORE_ABOVE' || step.conditionType === 'HAS_TAG' || step.conditionType === 'STATUS_IS') && (
+                                <div>
+                                  <label className="text-xs font-medium">
+                                    {step.conditionType === 'SCORE_ABOVE' ? 'Score Threshold' : step.conditionType === 'HAS_TAG' ? 'Tag Name' : 'Status Value'}
+                                  </label>
+                                  <Input
+                                    value={step.conditionValue || ''}
+                                    onChange={(e) => updateStep(idx, { conditionValue: e.target.value })}
+                                    placeholder={step.conditionType === 'SCORE_ABOVE' ? 'e.g. 50' : step.conditionType === 'HAS_TAG' ? 'e.g. hot-lead' : 'e.g. QUALIFIED'}
+                                  />
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-xs font-medium text-green-700">If TRUE → go to step #</label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    value={step.trueGotoStep != null ? step.trueGotoStep + 1 : ''}
+                                    onChange={(e) => updateStep(idx, { trueGotoStep: e.target.value ? parseInt(e.target.value) - 1 : undefined })}
+                                    placeholder="Next step"
+                                  />
+                                  <p className="text-[10px] text-gray-400 mt-0.5">Leave empty = next step</p>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium text-red-700">If FALSE → go to step #</label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    value={step.falseGotoStep != null ? step.falseGotoStep + 1 : ''}
+                                    onChange={(e) => updateStep(idx, { falseGotoStep: e.target.value ? parseInt(e.target.value) - 1 : undefined })}
+                                    placeholder="Next step"
+                                  />
+                                  <p className="text-[10px] text-gray-400 mt-0.5">Leave empty = next step</p>
+                                </div>
                               </div>
                             </>
                           )}
@@ -508,6 +680,9 @@ export default function SequencesPage() {
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => addStep('LINKEDIN')}>
                         <MessageSquare className="mr-1 h-3 w-3" /> LinkedIn
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => addStep('CONDITION')}>
+                        <GitBranch className="mr-1 h-3 w-3" /> Condition
                       </Button>
                     </div>
                   ) : null}
@@ -759,6 +934,16 @@ export default function SequencesPage() {
 
                     {/* Actions */}
                     <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => cloneMutation.mutate(sequence.id)}
+                        disabled={cloneMutation.isPending}
+                        title="Clone sequence"
+                      >
+                        <Copy className="mr-2 h-4 w-4" />
+                        Clone
+                      </Button>
                       {sequence.status === 'ACTIVE' && (
                         <Button
                           variant="outline"
@@ -781,6 +966,20 @@ export default function SequencesPage() {
                           {sequence.status === 'DRAFT' ? 'Activate' : 'Resume'}
                         </Button>
                       )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => {
+                          if (confirm(`Delete "${sequence.name}"? ${sequence.enrolledCount > 0 ? 'This sequence has active enrollments and will be archived instead.' : 'This cannot be undone.'}`)) {
+                            deleteMutation.mutate(sequence.id)
+                          }
+                        }}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

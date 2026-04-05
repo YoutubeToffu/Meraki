@@ -18,6 +18,7 @@ import {
   Link2,
   FileText,
   LogOut,
+  Bot,
 } from 'lucide-react'
 
 const navigation = [
@@ -65,6 +66,11 @@ const navigation = [
     name: 'AI Assistant',
     href: '/dashboard/ai',
     icon: Sparkles,
+  },
+  {
+    name: 'AI Autopilot',
+    href: '/dashboard/autopilot',
+    icon: Bot,
   },
   {
     name: 'Analytics',

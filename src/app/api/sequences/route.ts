@@ -34,6 +34,10 @@ const createSequenceSchema = z.object({
     taskDescription: z.string().optional(),
     useAiPersonalization: z.boolean().default(false),
     aiPrompt: z.string().optional(),
+    conditionType: z.string().optional(),
+    conditionValue: z.string().optional(),
+    trueGotoStep: z.number().optional(),
+    falseGotoStep: z.number().optional(),
   })).optional(),
 })
 
@@ -125,6 +129,10 @@ export async function POST(request: Request) {
                 taskDescription: step.taskDescription,
                 useAiPersonalization: step.useAiPersonalization,
                 aiPrompt: step.aiPrompt,
+                conditionType: step.conditionType,
+                conditionValue: step.conditionValue,
+                trueGotoStep: step.trueGotoStep,
+                falseGotoStep: step.falseGotoStep,
               })),
             }
           : undefined,
@@ -180,6 +188,10 @@ const editSequenceSchema = z.object({
     taskDescription: z.string().optional(),
     useAiPersonalization: z.boolean().default(false),
     aiPrompt: z.string().optional(),
+    conditionType: z.string().optional(),
+    conditionValue: z.string().optional(),
+    trueGotoStep: z.number().optional(),
+    falseGotoStep: z.number().optional(),
   })).optional(),
 })
 
@@ -280,6 +292,10 @@ export async function PUT(request: Request) {
             taskDescription: step.taskDescription,
             useAiPersonalization: step.useAiPersonalization,
             aiPrompt: step.aiPrompt,
+            conditionType: step.conditionType,
+            conditionValue: step.conditionValue,
+            trueGotoStep: step.trueGotoStep,
+            falseGotoStep: step.falseGotoStep,
           })),
         })
       }

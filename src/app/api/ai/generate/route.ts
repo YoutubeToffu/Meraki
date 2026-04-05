@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import OpenAI from 'openai'
+import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 const generateContentSchema = z.object({
   type: z.enum([
@@ -11,6 +15,9 @@ const generateContentSchema = z.object({
     'NEXT_ACTION',
     'LEAD_SUMMARY',
     'MEETING_PREP',
+    'FIRST_LINE',
+    'REPLY_SENTIMENT',
+    'CAMPAIGN_COACH',
   ]),
   context: z.object({
     leadName: z.string().optional(),
@@ -19,40 +26,64 @@ const generateContentSchema = z.object({
     industry: z.string().optional(),
     previousInteractions: z.array(z.string()).optional(),
     customPrompt: z.string().optional(),
-    tone: z.enum(['formal', 'casual', 'friendly', 'professional']).optional(),
+    tone: z.enum(['formal', 'casual', 'friendly', 'professional', 'founder-to-founder', 'recruiter', 'executive']).optional(),
     length: z.enum(['short', 'medium', 'long']).optional(),
+    // For reply sentiment analysis
+    replyText: z.string().optional(),
+    // For campaign coaching
+    campaignMetrics: z.object({
+      openRate: z.number().optional(),
+      replyRate: z.number().optional(),
+      clickRate: z.number().optional(),
+      bounceRate: z.number().optional(),
+      totalSent: z.number().optional(),
+      sequenceName: z.string().optional(),
+      subjectLine: z.string().optional(),
+      emailBody: z.string().optional(),
+      targetPersona: z.string().optional(),
+    }).optional(),
+    // For first-line generator
+    companyNews: z.string().optional(),
+    recentPost: z.string().optional(),
+    hiringInfo: z.string().optional(),
+    personalDetail: z.string().optional(),
   }),
 })
 
-// POST /api/ai/generate - Generate AI content
+// POST /api/ai/generate - Generate AI content via GPT-4o
 export async function POST(request: Request) {
   try {
+    const session = await getRequiredSession()
     const body = await request.json()
     const validatedData = generateContentSchema.parse(body)
 
-    // Mock AI response - replace with actual AI API call (OpenAI, Anthropic, etc.)
-    const aiResponses: Record<string, string> = {
-      EMAIL_SUBJECT: generateEmailSubject(validatedData.context),
-      EMAIL_BODY: generateEmailBody(validatedData.context),
-      LINKEDIN_MESSAGE: generateLinkedInMessage(validatedData.context),
-      FOLLOW_UP: generateFollowUp(validatedData.context),
-      OBJECTION_RESPONSE: generateObjectionResponse(validatedData.context),
-      NEXT_ACTION: generateNextAction(validatedData.context),
-      LEAD_SUMMARY: generateLeadSummary(validatedData.context),
-      MEETING_PREP: generateMeetingPrep(validatedData.context),
-    }
+    const { type, context } = validatedData
+    const systemPrompt = buildSystemPrompt(type, context)
+    const userPrompt = buildUserPrompt(type, context)
 
-    const content = aiResponses[validatedData.type] || 'Unable to generate content'
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: type === 'REPLY_SENTIMENT' ? 0.2 : 0.7,
+      max_tokens: type === 'EMAIL_SUBJECT' || type === 'FIRST_LINE' ? 300 : 1200,
+    })
+
+    const content = completion.choices[0]?.message?.content || 'Unable to generate content'
+    const tokensUsed = completion.usage?.total_tokens || 0
 
     return NextResponse.json({
       data: {
         content,
-        type: validatedData.type,
-        tokensUsed: Math.floor(content.length / 4), // Approximate token count
+        type,
+        tokensUsed,
         generatedAt: new Date().toISOString(),
       },
     })
   } catch (error) {
+    try { return handleAuthError(error) } catch {}
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Validation error', details: error.issues },
@@ -67,205 +98,136 @@ export async function POST(request: Request) {
   }
 }
 
-// Helper functions to generate content (replace with actual AI calls)
-function generateEmailSubject(context: any): string {
-  const name = context.leadName || 'there'
-  const company = context.leadCompany || 'your company'
-  
-  const subjects = [
-    `Quick question about ${company}'s hiring process`,
-    `${name}, here's how to cut hiring costs by 30%`,
-    `Saving 20 hours/week on recruitment - interested?`,
-    `${company} + TalentMeta: A quick intro`,
-  ]
-  
-  return subjects[Math.floor(Math.random() * subjects.length)]
+function buildSystemPrompt(type: string, context: any): string {
+  const toneMap: Record<string, string> = {
+    formal: 'Write in a formal, corporate tone.',
+    casual: 'Write in a casual, conversational tone. Use contractions.',
+    friendly: 'Write in a warm, friendly tone. Be personable.',
+    professional: 'Write in a professional but approachable tone.',
+    'founder-to-founder': 'Write as one founder/CEO to another. Be direct, peer-level, no fluff.',
+    recruiter: 'Write in the voice of an experienced recruiter. Be warm but efficient.',
+    executive: 'Write for a C-level audience. Be concise, strategic, and data-driven.',
+  }
+  const toneInstruction = toneMap[context.tone] || toneMap.professional
+
+  const base = `You are an expert B2B outreach copywriter inside Meraki, an AI outreach platform. ${toneInstruction}
+Never use filler phrases like "I hope this email finds you well" or "I came across your profile." Be specific, relevant, and human.
+Never use emojis in emails unless the tone is casual. Keep paragraphs short (2-3 sentences max).`
+
+  const typeInstructions: Record<string, string> = {
+    EMAIL_SUBJECT: `${base}
+Generate 3 email subject lines. Each should be under 60 characters, create curiosity, and be personalized. Return them numbered 1-3, one per line. No quotes around them.`,
+
+    EMAIL_BODY: `${base}
+Write a cold outreach email. Structure: personalized opening referencing something specific about the prospect → 1-2 sentences on the pain point → brief value prop (no bullet-point lists of features) → soft CTA (question, not a demand). Keep under 150 words.
+Do NOT include a subject line. Do NOT include placeholders like [Your Name] — leave the sign-off as just a dash or "Best,".`,
+
+    LINKEDIN_MESSAGE: `${base}
+Write a LinkedIn connection request or message. Must be under 300 characters for connection requests, under 500 for DMs. Be human, not salesy. Reference something specific. No "I'd love to pick your brain."`,
+
+    FOLLOW_UP: `${base}
+Write a follow-up email for someone who hasn't responded. Do NOT repeat the original pitch. Add new value: a relevant insight, a short case study mention, or a different angle. Keep under 100 words. End with an easy yes/no question.`,
+
+    OBJECTION_RESPONSE: `${base}
+The prospect has raised an objection. Generate 3 reply options:
+1. **Soft reply** — empathetic, low-pressure, keeps the door open
+2. **Confident reply** — addresses the concern directly with evidence
+3. **Value-driven reply** — reframes around ROI or a specific benefit
+
+Label each clearly. Keep each under 80 words.`,
+
+    NEXT_ACTION: `${base}
+You are an AI sales coach. Based on the lead's profile and engagement history, recommend the top 3 next actions ranked by likelihood of advancing the deal. Be specific and actionable — not generic advice. Include timing recommendations.`,
+
+    LEAD_SUMMARY: `${base}
+Generate a concise lead intelligence brief. Include: key insights about the person/company, likely pain points, recommended outreach angle, potential objections to prepare for, and a "Why this lead is a fit" score (0-100) with reasoning.`,
+
+    MEETING_PREP: `${base}
+Create a meeting preparation brief. Include: 3 discovery questions tailored to this prospect, 2-3 talking points based on their likely challenges, potential objections with suggested responses, and 2 concrete next steps to propose.`,
+
+    FIRST_LINE: `${base}
+Generate 3 hyper-personalized opening lines for a cold email. Each line should reference something specific about the prospect, their company, or their recent activity. The line should connect that observation to a relevant business challenge.
+Rules:
+- No generic flattery ("impressive growth")
+- No questions as openers
+- Each line should be 1-2 sentences max
+- Explain in parentheses WHY each line works
+
+Return them numbered 1-3.`,
+
+    REPLY_SENTIMENT: `You are an AI reply classifier for a sales outreach platform. Analyze the prospect's reply and return a JSON object with these fields:
+{
+  "sentiment": one of ["interested", "not_now", "not_interested", "objection", "forwarded", "unsubscribe", "wrong_contact", "meeting_likely", "needs_info", "competitor"],
+  "confidence": 0-100,
+  "summary": "1-sentence summary of their intent",
+  "suggestedAction": "specific next step to take",
+  "suggestedReply": "a brief draft reply (under 60 words)",
+  "urgency": "high" | "medium" | "low"
 }
+Return ONLY valid JSON. No markdown, no explanation outside the JSON.`,
 
-function generateEmailBody(context: any): string {
-  const name = context.leadName || 'there'
-  const company = context.leadCompany || 'your company'
-  const title = context.leadJobTitle || 'hiring manager'
-  
-  return `Hi ${name},
+    CAMPAIGN_COACH: `You are an expert outreach strategist and campaign coach inside Meraki. Analyze the campaign metrics provided and give specific, actionable advice. Structure your response as:
 
-I came across ${company} and was impressed by your growth trajectory. As ${title}, I imagine scaling your team while maintaining quality is a constant challenge.
+**Overall Assessment**: 1-2 sentences on campaign health (good/needs work/underperforming)
+**What's Working**: bullet points on strengths
+**What's Not Working**: bullet points with specific problems identified
+**Recommendations**: numbered list of specific changes to make, ordered by expected impact
+**Quick Win**: one thing they can change right now for immediate improvement
 
-At TalentMeta.ai, we've helped companies like yours:
-• Reduce time-to-hire by 40%
-• Cut recruitment costs by 30%
-• Improve candidate quality scores by 2x
-
-Would you be open to a quick 15-minute call to explore if this could help ${company}?
-
-Here's my calendar if you'd like to pick a time: [calendar_link]
-
-Best regards,
-[Your Name]
-
-P.S. Happy to share a case study from a similar company in your industry.`
-}
-
-function generateLinkedInMessage(context: any): string {
-  const name = context.leadName || 'there'
-  const company = context.leadCompany || 'your company'
-  
-  return `Hi ${name}! 👋
-
-I noticed ${company} is growing rapidly - congratulations! 
-
-I work with scaling companies to streamline their recruitment process using AI. We've helped teams reduce hiring time by 40% while improving candidate quality.
-
-Would love to connect and share some insights that might be useful for your team. No pitch, just a quick conversation.
-
-Open to connecting?`
-}
-
-function generateFollowUp(context: any): string {
-  const name = context.leadName || 'there'
-  
-  return `Hi ${name},
-
-I wanted to follow up on my previous message. I know how busy you must be, so I'll keep this brief.
-
-I'd love to share a 2-minute video showing how companies similar to yours are saving 20+ hours per week on recruitment.
-
-Would that be helpful?
-
-If the timing isn't right, no worries at all - just let me know and I'll check back in a few months.
-
-Best,
-[Your Name]`
-}
-
-function generateObjectionResponse(context: any): string {
-  const objection = context.customPrompt || "We don't have budget right now"
-  
-  const responses: Record<string, string> = {
-    "We don't have budget right now": `I completely understand - budget constraints are real. A few thoughts:
-
-1. Our ROI typically shows within 30 days (avg 3x return on investment)
-2. We offer a free pilot program so you can see results before committing
-3. Many clients find we actually save money vs. their current recruitment spend
-
-Would it help if I shared a cost comparison showing potential savings for a company your size?`,
-
-    "We're not looking right now": `Totally fair - timing is everything. Quick question: is it that you're not hiring, or that you have a solution that's working well?
-
-If it's the former, I'd love to stay in touch for when things pick up.
-If it's the latter, I'm genuinely curious what's working for you - always learning from the best!`,
-
-    "We use a competitor": `Great to hear you're already invested in this space! 
-
-Out of curiosity, what's working well with your current solution? And if there was one thing you could improve, what would it be?
-
-I ask because many of our customers switched from [Competitor] specifically for [unique feature]. Happy to show you a quick comparison if helpful.`,
+Be direct and specific. Use benchmark data: average cold email open rate is 20-25%, reply rate 2-5%, click rate 3-5%. Reference these when comparing.`,
   }
 
-  return responses[objection] || `Thank you for sharing that concern. Let me address it directly:
-
-${objection}
-
-Here's how we typically handle this situation:
-1. We offer flexible options to accommodate different needs
-2. Our success team works with you to find the right fit
-3. We have case studies from companies who had similar concerns
-
-Would you be open to a quick call to discuss your specific situation?`
+  return typeInstructions[type] || base
 }
 
-function generateNextAction(context: any): string {
-  const name = context.leadName || 'The lead'
-  const company = context.leadCompany || 'their company'
-  
-  return `Based on the lead profile and engagement history, here are recommended next actions:
+function buildUserPrompt(type: string, context: any): string {
+  const parts: string[] = []
 
-1. **High Priority**: Send a personalized follow-up email within 24 hours
-   - Reference their recent email open (if applicable)
-   - Include a specific case study from their industry
+  if (context.leadName) parts.push(`Lead: ${context.leadName}`)
+  if (context.leadJobTitle) parts.push(`Title: ${context.leadJobTitle}`)
+  if (context.leadCompany) parts.push(`Company: ${context.leadCompany}`)
+  if (context.industry) parts.push(`Industry: ${context.industry}`)
 
-2. **Connect on LinkedIn**: ${name} is active on LinkedIn
-   - Send a connection request with personalized note
-   - Comment on their recent posts to build rapport
+  if (context.companyNews) parts.push(`Recent company news: ${context.companyNews}`)
+  if (context.recentPost) parts.push(`Recent LinkedIn post/activity: ${context.recentPost}`)
+  if (context.hiringInfo) parts.push(`Hiring info: ${context.hiringInfo}`)
+  if (context.personalDetail) parts.push(`Personal detail: ${context.personalDetail}`)
 
-3. **Schedule a Demo**: Based on their engagement score (85+)
-   - Send a Calendly link with 3-4 time slots
-   - Offer a 15-minute "quick win" demo format
+  if (context.previousInteractions?.length) {
+    parts.push(`Previous interactions:\n${context.previousInteractions.map((i: string) => `- ${i}`).join('\n')}`)
+  }
 
-4. **Research ${company}**:
-   - Check recent news/funding announcements
-   - Identify potential expansion plans or pain points
-   - Prepare relevant talking points for next contact`
-}
+  if (context.customPrompt) parts.push(`Additional context: ${context.customPrompt}`)
 
-function generateLeadSummary(context: any): string {
-  const name = context.leadName || 'Lead'
-  const company = context.leadCompany || 'Company'
-  const title = context.leadJobTitle || 'Decision Maker'
-  
-  return `## Lead Summary: ${name}
+  // Reply sentiment
+  if (type === 'REPLY_SENTIMENT' && context.replyText) {
+    return `Classify this prospect reply:\n\n"${context.replyText}"`
+  }
 
-**Company**: ${company}
-**Title**: ${title}
-**Lead Score**: 85/100 (High Priority)
+  // Campaign coach
+  if (type === 'CAMPAIGN_COACH' && context.campaignMetrics) {
+    const m = context.campaignMetrics
+    const metricLines = [
+      m.sequenceName && `Campaign/Sequence: ${m.sequenceName}`,
+      m.totalSent != null && `Total Sent: ${m.totalSent}`,
+      m.openRate != null && `Open Rate: ${m.openRate}%`,
+      m.replyRate != null && `Reply Rate: ${m.replyRate}%`,
+      m.clickRate != null && `Click Rate: ${m.clickRate}%`,
+      m.bounceRate != null && `Bounce Rate: ${m.bounceRate}%`,
+      m.targetPersona && `Target Persona: ${m.targetPersona}`,
+      m.subjectLine && `Subject Line: "${m.subjectLine}"`,
+      m.emailBody && `Email Body:\n${m.emailBody}`,
+    ].filter(Boolean)
+    return `Analyze this campaign:\n\n${metricLines.join('\n')}`
+  }
 
-### Key Insights:
-- Company has grown 40% in the past year
-- Recently posted 15 new job openings on LinkedIn
-- Active in hiring/HR tech discussions online
+  // Objection handling
+  if (type === 'OBJECTION_RESPONSE' && context.customPrompt) {
+    return `The prospect said: "${context.customPrompt}"\n\n${parts.filter(p => !p.startsWith('Additional')).join('\n')}`
+  }
 
-### Engagement History:
-- Opened 3 emails (68% open rate)
-- Clicked on pricing page link
-- Visited demo page twice
+  const lengthHint = context.length === 'short' ? '\nKeep it concise — under 75 words.' :
+                     context.length === 'long' ? '\nThis can be detailed — up to 300 words.' : ''
 
-### Recommended Approach:
-- Focus on ROI and time savings
-- Reference similar company case studies
-- Offer a personalized demo
-
-### Potential Concerns:
-- May have existing vendor relationships
-- Budget cycle ends in Q2
-- Decision requires multiple stakeholders`
-}
-
-function generateMeetingPrep(context: any): string {
-  const name = context.leadName || 'the prospect'
-  const company = context.leadCompany || 'their company'
-  
-  return `# Meeting Prep: ${name} at ${company}
-
-## Background Research:
-- ${company} is a [industry] company with approximately [X] employees
-- Recent news: [Company expansion/funding/product launch]
-- LinkedIn profile shows focus on [relevant interests]
-
-## Talking Points:
-1. **Opening**: Reference their recent [achievement/news/post]
-2. **Discovery Questions**:
-   - How are you currently handling [pain point]?
-   - What's your biggest challenge with recruitment right now?
-   - What would success look like for your team?
-
-3. **Value Props to Highlight**:
-   - 40% reduction in time-to-hire
-   - AI-powered candidate matching
-   - Integration with existing ATS
-
-4. **Objection Handling**:
-   - Budget: ROI typically 3x within 90 days
-   - Time: Implementation takes < 1 week
-   - Complexity: Dedicated success manager included
-
-## Meeting Goals:
-- [ ] Understand their current process
-- [ ] Identify 2-3 key pain points
-- [ ] Propose a pilot program
-- [ ] Schedule follow-up or demo
-
-## Next Steps to Propose:
-1. 14-day pilot with 50 candidates
-2. Weekly check-in calls
-3. ROI review at end of pilot`
+  return parts.join('\n') + lengthHint
 }

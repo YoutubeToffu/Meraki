@@ -16,6 +16,9 @@ import {
   Eye,
   X,
   Loader2,
+  BookOpen,
+  Download,
+  CheckCircle2,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -28,6 +31,15 @@ const categoryColors: Record<string, string> = {
 }
 
 const categories = ['All', 'Cold Outreach', 'Follow-up', 'Sales', 'Re-engagement', 'Nurture']
+
+interface PlaybookInfo {
+  id: string
+  industry: string
+  description: string
+  icon: string
+  templateCount: number
+  installedCount: number
+}
 
 interface Template {
   id: string
@@ -46,6 +58,8 @@ export default function TemplatesPage() {
   const [activeCategory, setActiveCategory] = useState('All')
   const [showModal, setShowModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
+  const [showPlaybooks, setShowPlaybooks] = useState(false)
+  const [installingPlaybook, setInstallingPlaybook] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: '',
     subject: '',
@@ -112,6 +126,38 @@ export default function TemplatesPage() {
     },
   })
 
+  const { data: playbooksData } = useQuery({
+    queryKey: ['playbooks'],
+    queryFn: async () => {
+      const res = await fetch('/api/templates/playbooks')
+      if (!res.ok) throw new Error('Failed to fetch playbooks')
+      return res.json()
+    },
+    enabled: showPlaybooks,
+  })
+
+  const installPlaybook = async (playbookId: string) => {
+    setInstallingPlaybook(playbookId)
+    try {
+      const res = await fetch('/api/templates/playbooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playbookId }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error)
+      toast({ title: result.message })
+      queryClient.invalidateQueries({ queryKey: ['templates'] })
+      queryClient.invalidateQueries({ queryKey: ['playbooks'] })
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    } finally {
+      setInstallingPlaybook(null)
+    }
+  }
+
+  const playbooks: PlaybookInfo[] = playbooksData?.data || []
+
   const closeModal = () => {
     setShowModal(false)
     setEditingTemplate(null)
@@ -147,10 +193,16 @@ export default function TemplatesPage() {
         title="Email Templates"
         description="Create and manage reusable email templates"
         action={
-          <Button onClick={() => { setEditingTemplate(null); setForm({ name: '', subject: '', body: '', category: '' }); setShowModal(true) }}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Template
-          </Button>
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={() => setShowPlaybooks(!showPlaybooks)}>
+              <BookOpen className="mr-2 h-4 w-4" />
+              Industry Playbooks
+            </Button>
+            <Button onClick={() => { setEditingTemplate(null); setForm({ name: '', subject: '', body: '', category: '' }); setShowModal(true) }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Template
+            </Button>
+          </div>
         }
       />
 
@@ -241,6 +293,77 @@ export default function TemplatesPage() {
             </Button>
           ))}
         </div>
+
+        {/* Industry Playbooks Panel */}
+        {showPlaybooks && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Industry Playbooks</CardTitle>
+                  <CardDescription>
+                    Pre-built email templates for your industry — install with one click
+                  </CardDescription>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setShowPlaybooks(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {playbooks.map((pb) => {
+                  const fullyInstalled = pb.installedCount === pb.templateCount
+                  return (
+                    <div
+                      key={pb.id}
+                      className="rounded-lg border p-4 space-y-3 hover:shadow-sm transition-shadow"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="text-2xl">{pb.icon}</div>
+                          <h3 className="mt-1 font-semibold text-sm">{pb.industry}</h3>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {pb.templateCount} templates
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{pb.description}</p>
+                      {fullyInstalled ? (
+                        <div className="flex items-center text-sm text-green-600 font-medium">
+                          <CheckCircle2 className="mr-1 h-4 w-4" />
+                          Installed
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          disabled={installingPlaybook === pb.id}
+                          onClick={() => installPlaybook(pb.id)}
+                        >
+                          {installingPlaybook === pb.id ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Installing...</>
+                          ) : (
+                            <>
+                              <Download className="mr-2 h-4 w-4" />
+                              Install{pb.installedCount > 0 ? ` (${pb.templateCount - pb.installedCount} remaining)` : ''}
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+                {playbooks.length === 0 && (
+                  <div className="col-span-full py-8 text-center text-sm text-gray-400">
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" />
+                    Loading playbooks...
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Loading State */}
         {isLoading && (

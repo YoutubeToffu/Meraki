@@ -31,6 +31,7 @@ model Organization {
   emailTemplates EmailTemplate[]
   integrations Integration[]
   analytics   Analytics[]
+  aiCampaigns AiCampaign[]
   aiCredits   Int      @default(1000)
 }
 
@@ -98,6 +99,9 @@ model Lead {
   aiSummary       String?
   aiNextAction    String?
   aiScore         Int?
+  
+  // Contact preferences
+  doNotContact    Boolean     @default(false)
   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -313,6 +317,12 @@ model SequenceStep {
   
   useAiPersonalization Boolean @default(false)
   aiPrompt    String?
+  
+  // Condition branching (for CONDITION type steps)
+  conditionType    String?   // EMAIL_OPENED, EMAIL_CLICKED, EMAIL_REPLIED, SCORE_ABOVE, HAS_TAG
+  conditionValue   String?   // Threshold value or tag name
+  trueGotoStep     Int?      // Step order to jump to if true (null = next sequential step)
+  falseGotoStep    Int?      // Step order to jump to if false (null = next sequential step)
   
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -682,4 +692,82 @@ enum TaskStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+}
+
+// ============================================
+// AI AUTOPILOT CAMPAIGNS
+// ============================================
+
+model AiCampaign {
+  id          String           @id @default(cuid())
+  name        String
+  goal        String           @db.Text    // What the user wants to achieve
+  context     String           @db.Text    // Product/service/company context
+  targetAudience String?       @db.Text    // Who to target
+  tone        String           @default("professional") // Email tone
+  maxEmails   Int              @default(7) // Max emails per lead before stopping
+  dailyLimit  Int              @default(50) // Max emails per day
+  
+  status      AiCampaignStatus @default(ACTIVE)
+  
+  // AI learning — stores aggregated performance data
+  learnings   Json?    // { totalSent, totalOpened, totalReplied, bestSubjects, bestAngles, ... }
+  
+  sendWindowStart Int?       // hour 0-23
+  sendWindowEnd   Int?       // hour 0-23
+  sendTimezone    String     @default("America/New_York")
+  sendDays        Int[]      @default([1, 2, 3, 4, 5])
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  outreaches  AiOutreach[]
+  
+  @@index([organizationId, status])
+}
+
+enum AiCampaignStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model AiOutreach {
+  id            String          @id @default(cuid())
+  status        AiOutreachStatus @default(PENDING)
+  
+  leadId        String
+  aiCampaignId  String
+  aiCampaign    AiCampaign      @relation(fields: [aiCampaignId], references: [id], onDelete: Cascade)
+  
+  stepNumber    Int             @default(0)   // How many emails sent so far
+  lastAction    String?         // last AI decision: SEND_INITIAL, FOLLOW_UP, WAIT, STOP, PAUSE_MONTHS
+  lastReasoning String?         @db.Text      // AI's reasoning for last decision
+  nextActionAt  DateTime?       // When to process next
+  
+  // Per-lead engagement data for AI to learn from
+  totalSent     Int             @default(0)
+  totalOpened   Int             @default(0)
+  totalClicked  Int             @default(0)
+  totalReplied  Int             @default(0)
+  
+  stoppedReason String?         // Why AI stopped: REPLIED, UNSUBSCRIBED, MAX_REACHED, AI_DECIDED, BOUNCED
+  resumeAt      DateTime?       // For "follow up in X months" scenarios
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  @@unique([leadId, aiCampaignId])
+  @@index([status, nextActionAt])
+}
+
+enum AiOutreachStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  STOPPED
+  COMPLETED
 }
