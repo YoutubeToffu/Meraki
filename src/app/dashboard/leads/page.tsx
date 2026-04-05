@@ -20,8 +20,18 @@ import {
   StarOff,
   Loader2,
   X,
+  Send,
+  Zap,
+  Check,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 
 const statusColors: Record<string, string> = {
   NEW: 'bg-gray-100 text-gray-700',
@@ -92,6 +102,13 @@ export default function LeadsPage() {
   const [page, setPage] = useState(1)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
+  const [emailModalOpen, setEmailModalOpen] = useState(false)
+  const [emailTargetLeads, setEmailTargetLeads] = useState<Lead[]>([])
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [seqModalOpen, setSeqModalOpen] = useState(false)
+  const [seqTargetLeads, setSeqTargetLeads] = useState<Lead[]>([])
+  const [selectedSeqId, setSelectedSeqId] = useState('')
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -130,6 +147,106 @@ export default function LeadsPage() {
       toast({ title: 'Error', description: err.message, variant: 'destructive' })
     },
   })
+
+  const sendEmailMutation = useMutation({
+    mutationFn: async (data: { leadIds: string[]; subject: string; body: string }) => {
+      const res = await fetch('/api/emails/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to send email')
+      }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      setEmailModalOpen(false)
+      setEmailSubject('')
+      setEmailBody('')
+      setEmailTargetLeads([])
+      setSelectedLeads([])
+      toast({ title: data.message || 'Email sent successfully' })
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    },
+  })
+
+  const openEmailModal = (targets: Lead[]) => {
+    setEmailTargetLeads(targets)
+    setEmailSubject('')
+    setEmailBody('')
+    setEmailModalOpen(true)
+  }
+
+  const handleSendEmail = () => {
+    if (!emailSubject.trim() || !emailBody.trim()) {
+      toast({ title: 'Please fill in subject and body', variant: 'destructive' })
+      return
+    }
+    sendEmailMutation.mutate({
+      leadIds: emailTargetLeads.map((l) => l.id),
+      subject: emailSubject,
+      body: emailBody,
+    })
+  }
+
+  const { data: seqListData } = useQuery({
+    queryKey: ['sequences-list'],
+    queryFn: async () => {
+      const res = await fetch('/api/sequences')
+      if (!res.ok) throw new Error('Failed to fetch sequences')
+      return res.json()
+    },
+    enabled: seqModalOpen,
+  })
+
+  const enrollMutation = useMutation({
+    mutationFn: async (data: { sequenceId: string; leadIds: string[] }) => {
+      const res = await fetch('/api/sequences/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to enroll leads')
+      }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['sequences'] })
+      setSeqModalOpen(false)
+      setSelectedSeqId('')
+      setSeqTargetLeads([])
+      setSelectedLeads([])
+      toast({ title: data.message || 'Leads enrolled' })
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    },
+  })
+
+  const openSeqModal = (targets: Lead[]) => {
+    setSeqTargetLeads(targets)
+    setSelectedSeqId('')
+    setSeqModalOpen(true)
+  }
+
+  const handleEnroll = () => {
+    if (!selectedSeqId) {
+      toast({ title: 'Please select a sequence', variant: 'destructive' })
+      return
+    }
+    enrollMutation.mutate({
+      sequenceId: selectedSeqId,
+      leadIds: seqTargetLeads.map((l) => l.id),
+    })
+  }
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -324,11 +441,26 @@ export default function LeadsPage() {
                   {selectedLeads.length} lead(s) selected
                 </span>
                 <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const targets = leads.filter((l) => selectedLeads.includes(l.id))
+                      openEmailModal(targets)
+                    }}
+                  >
                     <Mail className="mr-2 h-4 w-4" />
                     Send Email
                   </Button>
-                  <Button variant="outline" size="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const targets = leads.filter((l) => selectedLeads.includes(l.id))
+                      openSeqModal(targets)
+                    }}
+                  >
+                    <Zap className="mr-2 h-4 w-4" />
                     Add to Sequence
                   </Button>
                   <Button
@@ -491,7 +623,12 @@ export default function LeadsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center space-x-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openEmailModal([lead])}
+                          >
                             <Mail className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -544,6 +681,152 @@ export default function LeadsPage() {
         </Card>
         )}
       </div>
+
+      {/* Add to Sequence Modal */}
+      <Dialog open={seqModalOpen} onOpenChange={setSeqModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add to Sequence</DialogTitle>
+            <DialogDescription>
+              Enroll {seqTargetLeads.length} lead(s) into an automated sequence
+            </DialogDescription>
+          </DialogHeader>
+          {seqTargetLeads.length > 1 && (
+            <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+              {seqTargetLeads.map((l) => (
+                <span
+                  key={l.id}
+                  className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                >
+                  {l.firstName || ''} {l.lastName || ''}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="space-y-3 pt-2">
+            <div>
+              <label className="text-sm font-medium">Select Sequence</label>
+              {(seqListData?.data || []).length === 0 ? (
+                <p className="text-sm text-gray-500 mt-1">
+                  No sequences yet. Create one in the Sequences tab first.
+                </p>
+              ) : (
+                <div className="mt-1 space-y-2 max-h-[300px] overflow-y-auto">
+                  {(seqListData?.data || []).map((seq: any) => (
+                    <div
+                      key={seq.id}
+                      onClick={() => setSelectedSeqId(seq.id)}
+                      className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                        selectedSeqId === seq.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-sm">{seq.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {seq.stepsCount} steps · {seq.enrolledCount} enrolled ·{' '}
+                            <span
+                              className={`font-medium ${
+                                seq.status === 'ACTIVE'
+                                  ? 'text-green-600'
+                                  : seq.status === 'PAUSED'
+                                  ? 'text-yellow-600'
+                                  : 'text-gray-600'
+                              }`}
+                            >
+                              {seq.status.charAt(0) + seq.status.slice(1).toLowerCase()}
+                            </span>
+                          </p>
+                        </div>
+                        {selectedSeqId === seq.id && (
+                          <Check className="h-5 w-5 text-blue-600" />
+                        )}
+                      </div>
+                      {seq.description && (
+                        <p className="mt-1 text-xs text-gray-400">{seq.description}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-2 pt-2">
+              <Button variant="outline" onClick={() => setSeqModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleEnroll}
+                disabled={!selectedSeqId || enrollMutation.isPending}
+              >
+                {enrollMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enrolling...</>
+                ) : (
+                  <><Zap className="mr-2 h-4 w-4" />Enroll</>  
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Compose Modal */}
+      <Dialog open={emailModalOpen} onOpenChange={setEmailModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Email</DialogTitle>
+            <DialogDescription>
+              {emailTargetLeads.length === 1
+                ? `To: ${emailTargetLeads[0].firstName || ''} ${emailTargetLeads[0].lastName || ''} (${emailTargetLeads[0].email})`
+                : `To: ${emailTargetLeads.length} recipients`}
+            </DialogDescription>
+          </DialogHeader>
+          {emailTargetLeads.length > 1 && (
+            <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+              {emailTargetLeads.map((l) => (
+                <span
+                  key={l.id}
+                  className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                >
+                  {l.email}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="space-y-3 pt-2">
+            <div>
+              <label className="text-sm font-medium">Subject</label>
+              <Input
+                placeholder="Email subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Body</label>
+              <textarea
+                className="w-full min-h-[160px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                placeholder="Write your email..."
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end space-x-2 pt-2">
+              <Button variant="outline" onClick={() => setEmailModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSendEmail} disabled={sendEmailMutation.isPending}>
+                {sendEmailMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</>
+                ) : (
+                  <><Send className="mr-2 h-4 w-4" />Send Email</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

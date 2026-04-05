@@ -248,6 +248,19 @@ model Sequence {
   triggerType SequenceTrigger @default(MANUAL)
   triggerConditions Json?
   
+  // Exit conditions
+  exitOnReply    Boolean @default(true)
+  exitOnMeeting  Boolean @default(false)
+  
+  // Sending window
+  sendWindowStart Int?    // hour 0-23 (e.g. 9)
+  sendWindowEnd   Int?    // hour 0-23 (e.g. 17)
+  sendTimezone    String  @default("UTC")
+  sendDays        Int[]   @default([1, 2, 3, 4, 5]) // 0=Sun, 1=Mon..6=Sat
+  
+  // Daily throttle
+  dailySendLimit  Int     @default(100)
+  
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -338,6 +351,7 @@ model SequenceEnrollment {
   pausedAt    DateTime?
   
   nextStepAt  DateTime?
+  lockedAt    DateTime?               // Optimistic lock for processor
   
   @@unique([leadId, sequenceId])
   @@index([status, nextStepAt])
@@ -392,6 +406,9 @@ model Email {
   messageId   String?     @unique
   threadId    String?
   
+  // Tracking
+  trackingId  String?     @unique @default(cuid())
+  
   createdAt   DateTime    @default(now())
   
   leadId      String
@@ -406,8 +423,11 @@ model Email {
   templateId  String?
   template    EmailTemplate? @relation(fields: [templateId], references: [id])
   
+  sequenceEnrollmentId String?
+  
   @@index([leadId, createdAt])
   @@index([campaignId])
+  @@index([trackingId])
 }
 
 enum EmailStatus {

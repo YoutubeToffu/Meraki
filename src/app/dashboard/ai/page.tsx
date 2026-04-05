@@ -16,7 +16,17 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
+  Loader2,
+  Check,
 } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 
 const aiCapabilities = [
   {
@@ -74,9 +84,68 @@ const recentGenerations = [
 ]
 
 export default function AIAssistantPage() {
+  const { toast } = useToast()
   const [prompt, setPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedContent, setGeneratedContent] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [saveModalOpen, setSaveModalOpen] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [templateCategory, setTemplateCategory] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handleCopy = async () => {
+    if (!generatedContent) return
+    await navigator.clipboard.writeText(generatedContent)
+    setCopied(true)
+    toast({ title: 'Copied to clipboard' })
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleSaveAsTemplate = async () => {
+    if (!generatedContent || !templateName.trim()) {
+      toast({ title: 'Please enter a template name', variant: 'destructive' })
+      return
+    }
+    setIsSaving(true)
+    try {
+      // Extract subject from generated content if it starts with "Subject:"
+      let subject = templateName
+      let body = generatedContent
+      const subjectMatch = generatedContent.match(/^Subject:\s*(.+)/m)
+      if (subjectMatch) {
+        subject = subjectMatch[1].trim()
+        body = generatedContent.replace(/^Subject:\s*.+\n*/m, '').trim()
+      }
+
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: templateName,
+          subject,
+          body,
+          category: templateCategory || 'ai-generated',
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to save template')
+      }
+      toast({ title: 'Template saved successfully' })
+      setSaveModalOpen(false)
+      setTemplateName('')
+      setTemplateCategory('')
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to save template',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return
@@ -210,11 +279,14 @@ P.S. Happy to share a case study from a similar company that saw 3x improvement 
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <Button variant="outline" size="sm">
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy
+                      <Button variant="outline" size="sm" onClick={handleCopy}>
+                        {copied ? (
+                          <><Check className="mr-2 h-4 w-4" />Copied</>
+                        ) : (
+                          <><Copy className="mr-2 h-4 w-4" />Copy</>
+                        )}
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" onClick={() => setSaveModalOpen(true)}>
                         <FileText className="mr-2 h-4 w-4" />
                         Save as Template
                       </Button>
@@ -301,6 +373,64 @@ P.S. Happy to share a case study from a similar company that saw 3x improvement 
           </CardContent>
         </Card>
       </div>
+
+      {/* Save as Template Modal */}
+      <Dialog open={saveModalOpen} onOpenChange={setSaveModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save as Template</DialogTitle>
+            <DialogDescription>
+              Save this generated content as a reusable email template
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <label className="text-sm font-medium">Template Name *</label>
+              <Input
+                placeholder="e.g., Cold outreach for HR managers"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Category</label>
+              <select
+                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={templateCategory}
+                onChange={(e) => setTemplateCategory(e.target.value)}
+              >
+                <option value="">AI Generated</option>
+                <option value="cold-outreach">Cold Outreach</option>
+                <option value="follow-up">Follow-up</option>
+                <option value="linkedin">LinkedIn</option>
+                <option value="objection">Objection Handling</option>
+                <option value="nurture">Nurture</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Preview</label>
+              <div className="rounded-lg border bg-gray-50 p-3 max-h-40 overflow-y-auto">
+                <pre className="whitespace-pre-wrap text-xs text-gray-600">
+                  {generatedContent?.slice(0, 300)}
+                  {(generatedContent?.length || 0) > 300 ? '...' : ''}
+                </pre>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 pt-2">
+              <Button variant="outline" onClick={() => setSaveModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveAsTemplate} disabled={isSaving}>
+                {isSaving ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+                ) : (
+                  'Save Template'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
