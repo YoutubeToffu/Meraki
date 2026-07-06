@@ -33,6 +33,7 @@ model Organization {
   analytics   Analytics[]
   aiCampaigns AiCampaign[]
   aiCredits   Int      @default(1000)
+  onboardingSession OnboardingSession?
 }
 
 model User {
@@ -41,6 +42,13 @@ model User {
   password      String?
   name          String?
   avatar        String?
+  phone         String?
+  senderName    String?
+  replyToEmail  String?
+  emailSignature String?
+  bio           String?  @db.Text
+  timezone      String   @default("UTC")
+  notificationFrequency NotificationFrequency @default(IMPORTANT)
   role          UserRole @default(MEMBER)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -66,6 +74,13 @@ enum UserRole {
   ADMIN
   MEMBER
   VIEWER
+}
+
+enum NotificationFrequency {
+  ALL
+  IMPORTANT
+  DAILY
+  NONE
 }
 
 // ============================================
@@ -770,4 +785,46 @@ enum AiOutreachStatus {
   PAUSED
   STOPPED
   COMPLETED
+}
+
+// ============================================
+// ONBOARDING & GROWTH PLANNING
+// ============================================
+
+model OnboardingSession {
+  id             String    @id @default(cuid())
+
+  // Collected answers as structured JSON
+  answers        Json?
+
+  // AI-generated growth plan (markdown/rich text)
+  generatedPlan  String?   @db.Text
+
+  // Plan metadata
+  planVersion    Int       @default(1)
+  completedAt    DateTime?
+
+  // Agent activation
+  activatedAt    DateTime?   // Set when agents are deployed from this plan
+  agentManifest  Json?       // { aiCampaignId, aiCampaignName, sequenceId, sequenceName, stepCount, createdAt }
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String    @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// PASSWORD RESET
+// ============================================
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
 }

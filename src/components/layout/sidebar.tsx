@@ -73,6 +73,11 @@ const navigation = [
     icon: Bot,
   },
   {
+    name: 'Growth Planner',
+    href: '/dashboard/onboarding',
+    icon: Target,
+  },
+  {
     name: 'Analytics',
     href: '/dashboard/analytics',
     icon: BarChart3,
@@ -139,16 +144,30 @@ export function Sidebar() {
       {/* Footer */}
       <div className="border-t border-gray-800 p-4">
         <div className="flex items-center space-x-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
-            {initials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="truncate text-sm font-medium text-white">{userName}</p>
-            <p className="truncate text-xs text-gray-400">{orgName}</p>
-          </div>
+          <Link
+            href="/dashboard/settings"
+            className="flex flex-1 min-w-0 items-center space-x-3 rounded-lg hover:bg-gray-800 transition-colors p-1 -m-1"
+            title="View profile"
+          >
+            {(session?.user as any)?.image || (session?.user as any)?.avatar ? (
+              <img
+                src={(session?.user as any)?.image || (session?.user as any)?.avatar}
+                alt={userName}
+                className="h-9 w-9 rounded-full object-cover flex-shrink-0"
+              />
+            ) : (
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
+                {initials}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="truncate text-sm font-medium text-white">{userName}</p>
+              <p className="truncate text-xs text-gray-400">{orgName}</p>
+            </div>
+          </Link>
           <button
             onClick={() => signOut({ callbackUrl: '/auth/login' })}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
             title="Sign out"
           >
             <LogOut className="h-4 w-4" />

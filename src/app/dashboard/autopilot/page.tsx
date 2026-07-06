@@ -23,6 +23,12 @@ import {
   Brain,
   Target,
   TrendingUp,
+  Activity,
+  Clock,
+  CheckCircle2,
+  ArrowRight,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -70,6 +76,7 @@ export default function AutopilotPage() {
 
   const [showWizard, setShowWizard] = useState(false)
   const [wizardStep, setWizardStep] = useState(1)
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'feed'>('campaigns')
 
   // Form state
   const [name, setName] = useState('')
@@ -171,11 +178,22 @@ export default function AutopilotPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['autopilot-campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-logs'] })
       toast({ title: data.message })
     },
     onError: (err: Error) => {
       toast({ title: 'Error', description: err.message, variant: 'destructive' })
     },
+  })
+
+  const { data: logsData, isRefetching: logsRefetching } = useQuery({
+    queryKey: ['agent-logs'],
+    queryFn: async () => {
+      const res = await fetch('/api/agent-logs')
+      if (!res.ok) throw new Error('Failed to fetch agent logs')
+      return res.json()
+    },
+    refetchInterval: 30000, // auto-refresh every 30s
   })
 
   const closeWizard = () => {
@@ -555,6 +573,117 @@ export default function AutopilotPage() {
           </div>
         )}
 
+        {/* Tabs */}
+        <div className="flex items-center justify-between border-b">
+          <div className="flex gap-1">
+            {([
+              { id: 'campaigns', label: 'Campaigns' },
+              { id: 'feed', label: 'Live Activity' },
+            ] as const).map(({ id, label }) => (
+              <button
+                key={id}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  activeTab === id ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+                onClick={() => setActiveTab(id)}
+              >
+                {label}
+                {id === 'feed' && (logsData?.overdueCount ?? 0) > 0 && (
+                  <span className="ml-2 inline-flex items-center justify-center h-4 w-4 rounded-full bg-orange-500 text-white text-[10px] font-bold">
+                    {(logsData.overdueCount > 9 ? '9+' : logsData.overdueCount)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          {activeTab === 'feed' && (
+            <button
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 pb-2"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['agent-logs'] })}
+            >
+              <RefreshCw className={`h-3 w-3 ${logsRefetching ? 'animate-spin' : ''}`} />
+              {logsRefetching ? 'Refreshing…' : 'Refresh'}
+            </button>
+          )}
+        </div>
+
+        {/* Live Activity Feed Tab */}
+        {activeTab === 'feed' && (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-4">
+              {logsData?.stats24h && (
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: 'Sent (24h)', value: logsData.stats24h.emailsSent },
+                    { label: 'Opened', value: logsData.stats24h.emailsOpened },
+                    { label: 'Clicked', value: logsData.stats24h.emailsClicked },
+                    { label: 'Replied', value: logsData.stats24h.emailsReplied },
+                  ].map(({ label, value }) => (
+                    <Card key={label}>
+                      <CardContent className="p-3 text-center">
+                        <p className="text-xl font-bold">{value}</p>
+                        <p className="text-xs text-gray-500">{label}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+              {(logsData?.overdueCount ?? 0) > 0 && (
+                <div className="flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                  <AlertCircle className="h-4 w-4 text-orange-600 shrink-0" />
+                  <p className="text-sm text-orange-700">
+                    <strong>{logsData.overdueCount}</strong> action{logsData.overdueCount !== 1 ? 's' : ''} overdue and waiting to run.
+                  </p>
+                  <Button size="sm" className="ml-auto shrink-0 bg-orange-600 hover:bg-orange-700" onClick={() => processMutation.mutate()} disabled={processMutation.isPending}>
+                    {processMutation.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Zap className="mr-1 h-3 w-3" />}
+                    Run Now
+                  </Button>
+                </div>
+              )}
+              {processMutation.isPending && (
+                <div className="flex items-center gap-3 rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 animate-pulse">
+                  <Brain className="h-4 w-4 text-purple-600 animate-pulse" />
+                  <p className="text-sm text-purple-700 font-medium">AI agents are running — processing leads and sending emails…</p>
+                </div>
+              )}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Recent Actions</h3>
+                {(!logsData?.recent || logsData.recent.length === 0) ? (
+                  <Card><CardContent className="py-10 text-center text-sm text-gray-400">No agent actions yet. Run your first campaign.</CardContent></Card>
+                ) : (
+                  <div className="space-y-1">
+                    {logsData.recent.map((a: any) => <ActivityRow key={a.id} activity={a} />)}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">Upcoming Queue</h3>
+              {(!logsData?.upcoming || logsData.upcoming.length === 0) ? (
+                <Card><CardContent className="py-8 text-center text-sm text-gray-400">No upcoming actions scheduled.</CardContent></Card>
+              ) : (
+                logsData.upcoming.map((item: any) => (
+                  <div key={item.id} className="flex items-start gap-3 rounded-lg border p-3 hover:bg-gray-50">
+                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${item.type === 'AI_EMAIL' ? 'bg-purple-100' : 'bg-blue-100'}`}>
+                      {item.type === 'AI_EMAIL' ? <Brain className="h-3.5 w-3.5 text-purple-600" /> : <Mail className="h-3.5 w-3.5 text-blue-600" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">{item.lead.firstName} {item.lead.lastName}{item.lead.company && <span className="text-gray-400"> · {item.lead.company}</span>}</p>
+                      <p className="text-[11px] text-gray-500">{item.label}</p>
+                      <p className="text-[10px] text-gray-400 truncate">{item.campaignName}</p>
+                    </div>
+                    <p className="text-[10px] text-gray-400 shrink-0">{formatRelative(item.scheduledAt)}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Campaigns Tab */}
+        {activeTab === 'campaigns' && (
+        <>
+
         {/* Campaign List */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -678,7 +807,60 @@ export default function AutopilotPage() {
             })}
           </div>
         )}
+        </>
+        )}
       </div>
     </>
+  )
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatRelative(iso: string) {
+  const diff = new Date(iso).getTime() - Date.now()
+  const absDiff = Math.abs(diff)
+  const mins = Math.floor(absDiff / 60000)
+  const hrs = Math.floor(mins / 60)
+  const days = Math.floor(hrs / 24)
+  if (diff < 0) {
+    if (mins < 60) return `${mins}m ago`
+    if (hrs < 24) return `${hrs}h ago`
+    return `${days}d ago`
+  }
+  if (mins < 60) return `in ${mins}m`
+  if (hrs < 24) return `in ${hrs}h`
+  return `in ${days}d`
+}
+
+const activityIcons: Record<string, React.ReactNode> = {
+  EMAIL_SENT: <Mail className="h-3.5 w-3.5 text-blue-600" />,
+  EMAIL_OPENED: <Eye className="h-3.5 w-3.5 text-green-600" />,
+  EMAIL_CLICKED: <ArrowRight className="h-3.5 w-3.5 text-purple-600" />,
+  EMAIL_REPLIED: <MessageSquare className="h-3.5 w-3.5 text-green-700" />,
+  LINKEDIN_CONNECT: <Users className="h-3.5 w-3.5 text-blue-500" />,
+  LINKEDIN_MESSAGE: <MessageSquare className="h-3.5 w-3.5 text-blue-500" />,
+  MEETING_SCHEDULED: <CheckCircle2 className="h-3.5 w-3.5 text-teal-600" />,
+  MEETING_COMPLETED: <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />,
+}
+
+function ActivityRow({ activity }: { activity: any }) {
+  const icon = activityIcons[activity.type] ?? <Activity className="h-3.5 w-3.5 text-gray-500" />
+  const isAgent = activity.isAgentAction
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
+      <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${isAgent ? 'bg-purple-50' : 'bg-gray-100'}`}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-gray-800 leading-snug">
+          {isAgent && <span className="inline-flex items-center mr-1 text-purple-600 font-medium"><Brain className="h-2.5 w-2.5 mr-0.5" />AI</span>}
+          <span className="font-medium">{activity.lead?.firstName} {activity.lead?.lastName}</span>
+          {activity.lead?.company && <span className="text-gray-400"> · {activity.lead.company}</span>}
+        </p>
+        <p className="text-[11px] text-gray-500 truncate">{activity.title}</p>
+      </div>
+      <p className="text-[10px] text-gray-400 shrink-0">{formatRelative(activity.createdAt)}</p>
+    </div>
   )
 }

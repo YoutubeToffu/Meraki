@@ -1,8 +1,13 @@
 {
-  "/api/leads/route": "app/api/leads/route.js",
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/autopilot/route": "app/api/autopilot/route.js",
-  "/dashboard/leads/page": "app/dashboard/leads/page.js",
-  "/dashboard/autopilot/page": "app/dashboard/autopilot/page.js",
-  "/dashboard/page": "app/dashboard/page.js"
+  "/api/linkedin/route": "app/api/linkedin/route.js",
+  "/api/meetings/route": "app/api/meetings/route.js",
+  "/api/integrations/route": "app/api/integrations/route.js",
+  "/api/integrations/linkedin/connect/route": "app/api/integrations/linkedin/connect/route.js",
+  "/dashboard/forms/page": "app/dashboard/forms/page.js",
+  "/dashboard/meetings/page": "app/dashboard/meetings/page.js",
+  "/dashboard/linkedin/page": "app/dashboard/linkedin/page.js",
+  "/dashboard/analytics/page": "app/dashboard/analytics/page.js",
+  "/dashboard/integrations/page": "app/dashboard/integrations/page.js",
+  "/dashboard/onboarding/page": "app/dashboard/onboarding/page.js"
 }

@@ -25,6 +25,10 @@ import {
   Check,
   ShieldOff,
   ShieldCheck,
+  Database,
+  ChevronLeft,
+  ChevronRight,
+  UserPlus,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 import {
@@ -112,6 +116,18 @@ export default function LeadsPage() {
   const [seqModalOpen, setSeqModalOpen] = useState(false)
   const [seqTargetLeads, setSeqTargetLeads] = useState<Lead[]>([])
   const [selectedSeqId, setSelectedSeqId] = useState('')
+
+  // Apollo import state
+  const [apolloModalOpen, setApolloModalOpen] = useState(false)
+  const [apolloFilters, setApolloFilters] = useState({ jobTitles: '', companies: '', locations: '', keywords: '' })
+  const [apolloResults, setApolloResults] = useState<any[]>([])
+  const [apolloPage, setApolloPage] = useState(1)
+  const [apolloPagination, setApollooPagination] = useState({ totalEntries: 0, totalPages: 0 })
+  const [apolloSearching, setApolloSearching] = useState(false)
+  const [apolloSelected, setApolloSelected] = useState<Set<string>>(new Set())
+  const [apolloImporting, setApolloImporting] = useState(false)
+  const [apolloError, setApolloError] = useState<string | null>(null)
+
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -282,6 +298,62 @@ export default function LeadsPage() {
   const leads: Lead[] = data?.data || []
   const pagination = data?.pagination || { page: 1, total: 0, totalPages: 1 }
 
+  const handleApolloSearch = async (page = 1) => {
+    setApolloSearching(true)
+    setApolloError(null)
+    try {
+      const res = await fetch('/api/apollo/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobTitles: apolloFilters.jobTitles ? apolloFilters.jobTitles.split(',').map((s) => s.trim()).filter(Boolean) : [],
+          companies: apolloFilters.companies ? apolloFilters.companies.split(',').map((s) => s.trim()).filter(Boolean) : [],
+          locations: apolloFilters.locations ? apolloFilters.locations.split(',').map((s) => s.trim()).filter(Boolean) : [],
+          keywords: apolloFilters.keywords,
+          page,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setApolloError(data.error ?? 'Search failed'); return }
+      setApolloResults(data.people ?? [])
+      setApollooPagination({ totalEntries: data.pagination?.totalEntries ?? 0, totalPages: data.pagination?.totalPages ?? 0 })
+      setApolloPage(page)
+      setApolloSelected(new Set())
+    } catch {
+      setApolloError('Network error')
+    } finally {
+      setApolloSearching(false)
+    }
+  }
+
+  const handleApolloImport = async () => {
+    if (apolloSelected.size === 0) return
+    setApolloImporting(true)
+    const toImport = apolloResults.filter((p) => apolloSelected.has(p.apolloId))
+    let imported = 0; let failed = 0
+    for (const p of toImport) {
+      if (!p.email) { failed++; continue }
+      try {
+        const res = await fetch('/api/leads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firstName: p.firstName, lastName: p.lastName, email: p.email,
+            company: p.company, jobTitle: p.jobTitle, linkedinUrl: p.linkedinUrl,
+            source: 'COLD_OUTREACH',
+          }),
+        })
+        if (res.ok) imported++; else failed++
+      } catch { failed++ }
+    }
+    setApolloImporting(false)
+    queryClient.invalidateQueries({ queryKey: ['leads'] })
+    toast({ title: `Imported ${imported} lead${imported !== 1 ? 's' : ''} from Apollo${failed > 0 ? ` (${failed} skipped — no email)` : ''}` })
+    setApolloModalOpen(false)
+    setApolloResults([])
+    setApolloSelected(new Set())
+  }
+
   const toggleSelectAll = () => {
     if (selectedLeads.length === leads.length) {
       setSelectedLeads([])
@@ -440,7 +512,11 @@ export default function LeadsPage() {
             />
             <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
               <Upload className="mr-2 h-4 w-4" />
-              Import
+              Import CSV
+            </Button>
+            <Button variant="outline" onClick={() => { setApolloModalOpen(true); setApolloResults([]); setApolloSelected(new Set()); setApolloError(null) }}>
+              <Database className="mr-2 h-4 w-4" />
+              Apollo
             </Button>
             <Button variant="outline" onClick={handleExport}>
               <Download className="mr-2 h-4 w-4" />
@@ -992,6 +1068,146 @@ export default function LeadsPage() {
                 ) : (
                   <><Send className="mr-2 h-4 w-4" />Send Email</>
                 )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Apollo Import Modal */}
+      <Dialog open={apolloModalOpen} onOpenChange={(open) => { setApolloModalOpen(open); if (!open) { setApolloResults([]); setApolloSelected(new Set()) } }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-blue-600" />
+              Import Leads from Apollo
+            </DialogTitle>
+            <DialogDescription>
+              Search Apollo&apos;s database of 270M+ contacts and import directly into Meraki.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Search Filters */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-600">Job Titles (comma-separated)</label>
+              <Input
+                placeholder="e.g. CEO, Founder, VP Sales"
+                value={apolloFilters.jobTitles}
+                onChange={(e) => setApolloFilters({ ...apolloFilters, jobTitles: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Companies (comma-separated)</label>
+              <Input
+                placeholder="e.g. Stripe, Notion"
+                value={apolloFilters.companies}
+                onChange={(e) => setApolloFilters({ ...apolloFilters, companies: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Locations (comma-separated)</label>
+              <Input
+                placeholder="e.g. San Francisco, New York"
+                value={apolloFilters.locations}
+                onChange={(e) => setApolloFilters({ ...apolloFilters, locations: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Keywords</label>
+              <Input
+                placeholder="e.g. B2B SaaS growth"
+                value={apolloFilters.keywords}
+                onChange={(e) => setApolloFilters({ ...apolloFilters, keywords: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {apolloError && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{apolloError}</p>
+          )}
+
+          <Button
+            onClick={() => handleApolloSearch(1)}
+            disabled={apolloSearching}
+            className="w-full"
+          >
+            {apolloSearching ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Searching Apollo...</> : <><Search className="mr-2 h-4 w-4" />Search</>}
+          </Button>
+
+          {/* Results */}
+          {apolloResults.length > 0 && (
+            <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+              <div className="flex items-center justify-between text-sm text-gray-500 pb-1 border-b">
+                <span>{apolloPagination.totalEntries.toLocaleString()} total results · Page {apolloPage} of {apolloPagination.totalPages}</span>
+                <button
+                  className="text-blue-600 text-xs hover:underline"
+                  onClick={() => {
+                    if (apolloSelected.size === apolloResults.length) setApolloSelected(new Set())
+                    else setApolloSelected(new Set(apolloResults.map((p) => p.apolloId)))
+                  }}
+                >
+                  {apolloSelected.size === apolloResults.length ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+              {apolloResults.map((person) => {
+                const isSelected = apolloSelected.has(person.apolloId)
+                return (
+                  <div
+                    key={person.apolloId}
+                    onClick={() => {
+                      const next = new Set(apolloSelected)
+                      if (isSelected) next.delete(person.apolloId); else next.add(person.apolloId)
+                      setApolloSelected(next)
+                    }}
+                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${isSelected ? 'border-blue-500 bg-blue-50' : 'hover:border-gray-300'}`}
+                  >
+                    <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                      {isSelected && <Check className="h-3 w-3 text-white" />}
+                    </div>
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium">
+                      {person.firstName?.[0]}{person.lastName?.[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{person.firstName} {person.lastName}</p>
+                      <p className="text-xs text-gray-500 truncate">{person.jobTitle}{person.company ? ` · ${person.company}` : ''}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {person.email ? (
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${person.emailStatus === 'verified' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {person.emailStatus === 'verified' ? '✓ verified' : person.emailStatus}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">no email</span>
+                      )}
+                      {person.location && <p className="text-xs text-gray-400 mt-0.5">{person.location}</p>}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Pagination */}
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <Button variant="outline" size="sm" disabled={apolloPage <= 1 || apolloSearching} onClick={() => handleApolloSearch(apolloPage - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-gray-500">Page {apolloPage}</span>
+                <Button variant="outline" size="sm" disabled={apolloPage >= apolloPagination.totalPages || apolloSearching} onClick={() => handleApolloSearch(apolloPage + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="flex items-center justify-between border-t pt-3 shrink-0">
+            <span className="text-sm text-gray-500">
+              {apolloSelected.size > 0 ? `${apolloSelected.size} selected` : 'Select contacts to import'}
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setApolloModalOpen(false)}>Cancel</Button>
+              <Button onClick={handleApolloImport} disabled={apolloSelected.size === 0 || apolloImporting}>
+                {apolloImporting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Importing...</> : <><UserPlus className="mr-2 h-4 w-4" />Import {apolloSelected.size > 0 ? apolloSelected.size : ''} Lead{apolloSelected.size !== 1 ? 's' : ''}</>}
               </Button>
             </div>
           </div>

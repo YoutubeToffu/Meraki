@@ -1,274 +1,191 @@
-'use client'
+﻿'use client'
 
+import { useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
-  Linkedin,
-  Mail,
-  Calendar,
-  Database,
-  MessageSquare,
-  Video,
-  Link2,
-  Check,
-  X,
-  Settings,
-  RefreshCw,
+  Linkedin, Mail, Calendar, Database, MessageSquare, Video, Link2,
+  Check, X, RefreshCw, Loader2, AlertCircle,
 } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import { useSearchParams } from 'next/navigation'
 
-const integrations = [
-  {
-    id: 'linkedin',
-    name: 'LinkedIn',
-    description: 'Connect your LinkedIn account for outreach and lead scraping',
-    icon: Linkedin,
-    status: 'connected',
-    lastSync: '2 hours ago',
-    category: 'Social',
-  },
-  {
-    id: 'gmail',
-    name: 'Gmail',
-    description: 'Send and track emails through your Gmail account',
-    icon: Mail,
-    status: 'connected',
-    lastSync: '30 minutes ago',
-    category: 'Email',
-  },
-  {
-    id: 'outlook',
-    name: 'Microsoft Outlook',
-    description: 'Integrate with Outlook for email and calendar',
-    icon: Mail,
-    status: 'disconnected',
-    lastSync: null,
-    category: 'Email',
-  },
-  {
-    id: 'google-calendar',
-    name: 'Google Calendar',
-    description: 'Sync meetings and schedule demos automatically',
-    icon: Calendar,
-    status: 'connected',
-    lastSync: '1 hour ago',
-    category: 'Calendar',
-  },
-  {
-    id: 'calendly',
-    name: 'Calendly',
-    description: 'Automate demo scheduling with Calendly links',
-    icon: Calendar,
-    status: 'connected',
-    lastSync: '15 minutes ago',
-    category: 'Calendar',
-  },
-  {
-    id: 'hubspot',
-    name: 'HubSpot',
-    description: 'Sync leads and activities with HubSpot CRM',
-    icon: Database,
-    status: 'disconnected',
-    lastSync: null,
-    category: 'CRM',
-  },
-  {
-    id: 'salesforce',
-    name: 'Salesforce',
-    description: 'Two-way sync with Salesforce',
-    icon: Database,
-    status: 'disconnected',
-    lastSync: null,
-    category: 'CRM',
-  },
-  {
-    id: 'slack',
-    name: 'Slack',
-    description: 'Get real-time notifications in Slack',
-    icon: MessageSquare,
-    status: 'connected',
-    lastSync: '5 minutes ago',
-    category: 'Communication',
-  },
-  {
-    id: 'zoom',
-    name: 'Zoom',
-    description: 'Automatically create Zoom meeting links',
-    icon: Video,
-    status: 'disconnected',
-    lastSync: null,
-    category: 'Meetings',
-  },
-  {
-    id: 'webhooks',
-    name: 'Custom Webhooks',
-    description: 'Send events to your own endpoints',
-    icon: Link2,
-    status: 'connected',
-    lastSync: '10 minutes ago',
-    category: 'Developer',
-  },
-]
+const INTEGRATION_META: Record<string, { icon: any; color: string }> = {
+  LINKEDIN: { icon: Linkedin, color: 'text-blue-600' },
+  GMAIL: { icon: Mail, color: 'text-red-500' },
+  OUTLOOK: { icon: Mail, color: 'text-blue-500' },
+  GOOGLE_CALENDAR: { icon: Calendar, color: 'text-green-600' },
+  CALENDLY: { icon: Calendar, color: 'text-blue-500' },
+  HUBSPOT: { icon: Database, color: 'text-orange-500' },
+  SALESFORCE: { icon: Database, color: 'text-blue-600' },
+  SLACK: { icon: MessageSquare, color: 'text-purple-600' },
+  ZOOM: { icon: Video, color: 'text-blue-500' },
+  WEBHOOK: { icon: Link2, color: 'text-gray-600' },
+}
 
-const categories = ['All', 'Email', 'Calendar', 'CRM', 'Social', 'Communication', 'Developer']
+const CONNECT_URLS: Record<string, string> = {
+  LINKEDIN: '/api/integrations/linkedin/connect',
+}
 
 export default function IntegrationsPage() {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const connected = searchParams.get('connected')
+    const error = searchParams.get('error')
+    if (connected) {
+      toast({ title: `${connected.charAt(0).toUpperCase() + connected.slice(1)} connected successfully!` })
+      queryClient.invalidateQueries({ queryKey: ['integrations'] })
+    }
+    if (error) {
+      const messages: Record<string, string> = {
+        linkedin_denied: 'LinkedIn connection was denied.',
+        no_code: 'No authorization code received.',
+        token_exchange: 'Failed to exchange token. Check your app credentials.',
+        callback_failed: 'Connection failed. Please try again.',
+      }
+      toast({ title: messages[error] ?? 'Connection failed', variant: 'destructive' })
+    }
+  }, []) // eslint-disable-line
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['integrations'],
+    queryFn: async () => {
+      const res = await fetch('/api/integrations')
+      if (!res.ok) throw new Error('Failed to fetch')
+      return res.json()
+    },
+  })
+
+  const disconnectMutation = useMutation({
+    mutationFn: async (type: string) => {
+      const res = await fetch(`/api/integrations?type=${type}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to disconnect')
+      return res.json()
+    },
+    onSuccess: (_: any, type: string) => {
+      queryClient.invalidateQueries({ queryKey: ['integrations'] })
+      toast({ title: `${type} disconnected` })
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: 'destructive' }),
+  })
+
+  const integrations: any[] = data?.data ?? []
+  const connectedCount: number = data?.connectedCount ?? 0
+
+  const formatLastSync = (iso: string | null) => {
+    if (!iso) return null
+    const diff = Date.now() - new Date(iso).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    return `${Math.floor(hrs / 24)}d ago`
+  }
+
   return (
     <>
-      <Header
-        title="Integrations"
-        description="Connect your tools and automate your workflow"
-      />
-
+      <Header title="Integrations" description="Connect your tools and automate your workflow" />
       <div className="p-6 space-y-6">
-        {/* Category Filter */}
-        <div className="flex space-x-2 overflow-x-auto pb-2">
-          {categories.map((category) => (
-            <Button
-              key={category}
-              variant={category === 'All' ? 'default' : 'outline'}
-              size="sm"
-            >
-              {category}
-            </Button>
-          ))}
-        </div>
-
-        {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardContent className="p-4">
+          {[
+            { label: 'Connected', value: connectedCount, icon: Check, bg: 'bg-green-100', color: 'text-green-600' },
+            { label: 'Available', value: integrations.length - connectedCount, icon: X, bg: 'bg-gray-100', color: 'text-gray-600' },
+            { label: 'Total', value: integrations.length, icon: RefreshCw, bg: 'bg-blue-100', color: 'text-blue-600' },
+          ].map(({ label, value, icon: Icon, bg, color }) => (
+            <Card key={label}><CardContent className="p-4">
               <div className="flex items-center space-x-3">
-                <div className="rounded-lg bg-green-100 p-2">
-                  <Check className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">5</p>
-                  <p className="text-sm text-muted-foreground">Connected</p>
-                </div>
+                <div className={`rounded-lg ${bg} p-2`}><Icon className={`h-5 w-5 ${color}`} /></div>
+                <div><p className="text-2xl font-bold">{value}</p><p className="text-sm text-muted-foreground">{label}</p></div>
               </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3">
-                <div className="rounded-lg bg-gray-100 p-2">
-                  <X className="h-5 w-5 text-gray-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">4</p>
-                  <p className="text-sm text-muted-foreground">Available</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3">
-                <div className="rounded-lg bg-blue-100 p-2">
-                  <RefreshCw className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">1.2K</p>
-                  <p className="text-sm text-muted-foreground">Syncs Today</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Integrations Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {integrations.map((integration) => (
-            <Card key={integration.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="rounded-lg bg-gray-100 p-2">
-                      <integration.icon className="h-5 w-5 text-gray-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{integration.name}</CardTitle>
-                      <span className="text-xs text-muted-foreground">
-                        {integration.category}
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    className={`flex h-6 w-6 items-center justify-center rounded-full ${
-                      integration.status === 'connected'
-                        ? 'bg-green-100'
-                        : 'bg-gray-100'
-                    }`}
-                  >
-                    {integration.status === 'connected' ? (
-                      <Check className="h-3 w-3 text-green-600" />
-                    ) : (
-                      <X className="h-3 w-3 text-gray-400" />
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-sm">
-                  {integration.description}
-                </CardDescription>
-
-                {integration.status === 'connected' && integration.lastSync && (
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    Last synced: {integration.lastSync}
-                  </p>
-                )}
-
-                <div className="mt-4 flex justify-end space-x-2">
-                  {integration.status === 'connected' ? (
-                    <>
-                      <Button variant="ghost" size="sm">
-                        <Settings className="mr-2 h-4 w-4" />
-                        Settings
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Sync
-                      </Button>
-                    </>
-                  ) : (
-                    <Button size="sm">Connect</Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            </CardContent></Card>
           ))}
         </div>
 
-        {/* API Keys Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>API Access</CardTitle>
-            <CardDescription>
-              Use our API to integrate Meraki with your own apps
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between rounded-lg border p-4">
-              <div>
-                <p className="font-medium">API Key</p>
-                <p className="mt-1 font-mono text-sm text-muted-foreground">
-                  mk_live_••••••••••••••••••••
-                </p>
+        {!isLoading && !integrations.find((i: any) => i.type === 'LINKEDIN' && i.status === 'CONNECTED') && (
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="flex items-start gap-4 p-5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600">
+                <Linkedin className="h-5 w-5 text-white" />
               </div>
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm">
-                  Show Key
-                </Button>
-                <Button variant="outline" size="sm">
-                  Regenerate
-                </Button>
+              <div className="flex-1">
+                <p className="font-semibold text-blue-900">Connect LinkedIn</p>
+                <p className="text-sm text-blue-700 mt-0.5">Requires <code className="bg-blue-100 px-1 rounded text-xs">LINKEDIN_CLIENT_ID</code> and <code className="bg-blue-100 px-1 rounded text-xs">LINKEDIN_CLIENT_SECRET</code> in your .env file.</p>
               </div>
-            </div>
-            <div className="mt-4 flex items-center space-x-4">
-              <Button variant="outline">View API Documentation</Button>
-              <Button variant="outline">Configure Webhooks</Button>
+              <Button size="sm" className="shrink-0 bg-blue-600 hover:bg-blue-700" onClick={() => window.location.href = '/api/integrations/linkedin/connect'}>Connect</Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {isLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {integrations.map((integration: any) => {
+              const meta = INTEGRATION_META[integration.type] ?? { icon: Link2, color: 'text-gray-600' }
+              const Icon = meta.icon
+              const isConnected = integration.status === 'CONNECTED'
+              const hasOAuth = !!CONNECT_URLS[integration.type]
+              const profile = integration.settings as any
+              return (
+                <Card key={integration.type} className={`hover:shadow-md transition-shadow ${isConnected ? 'border-green-200' : ''}`}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className={`rounded-lg p-2 ${isConnected ? 'bg-green-50' : 'bg-gray-100'}`}>
+                          <Icon className={`h-5 w-5 ${isConnected ? 'text-green-600' : meta.color}`} />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{integration.name}</CardTitle>
+                          <span className="text-xs text-muted-foreground">{integration.category}</span>
+                        </div>
+                      </div>
+                      <div className={`flex h-6 w-6 items-center justify-center rounded-full ${isConnected ? 'bg-green-100' : 'bg-gray-100'}`}>
+                        {isConnected ? <Check className="h-3 w-3 text-green-600" /> : <X className="h-3 w-3 text-gray-400" />}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <CardDescription className="text-xs">{integration.description}</CardDescription>
+                    {isConnected && profile?.name && (
+                      <div className="rounded-md bg-green-50 px-3 py-2 text-xs text-green-800">
+                        Connected as: <strong>{profile.name}</strong>{profile.email ? ` (${profile.email})` : ''}
+                      </div>
+                    )}
+                    {integration.lastSyncAt && <p className="text-xs text-gray-400">Last synced: {formatLastSync(integration.lastSyncAt)}</p>}
+                    <div className="flex items-center gap-2">
+                      {isConnected ? (
+                        <>
+                          <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => { if (confirm(`Disconnect ${integration.name}?`)) disconnectMutation.mutate(integration.type) }}
+                            disabled={disconnectMutation.isPending}>Disconnect</Button>
+                          {integration.type === 'LINKEDIN' && (
+                            <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/linkedin'}>View Activity</Button>
+                          )}
+                        </>
+                      ) : hasOAuth ? (
+                        <Button size="sm" onClick={() => window.location.href = CONNECT_URLS[integration.type]}>Connect</Button>
+                      ) : (
+                        <Button size="sm" variant="outline" disabled>Coming Soon</Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="flex items-start gap-3 p-4">
+            <AlertCircle className="h-4 w-4 text-yellow-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-yellow-800">
+              <p className="font-medium">LinkedIn API Note</p>
+              <p className="mt-0.5 text-xs">LinkedIn restricts automated messaging to Marketing Developer Platform partners. The LinkedIn connection enables OAuth and profile data. For outreach, Meraki tracks your activity manually — log it from the LinkedIn page after taking action.</p>
             </div>
           </CardContent>
         </Card>

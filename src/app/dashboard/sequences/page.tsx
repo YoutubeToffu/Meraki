@@ -71,6 +71,8 @@ interface StepDraft {
   templateId?: string
   taskTitle?: string
   taskDescription?: string
+  linkedinAction?: string
+  linkedinMessage?: string
   conditionType?: string
   conditionValue?: string
   trueGotoStep?: number
@@ -123,6 +125,11 @@ export default function SequencesPage() {
   const [seqTrigger, setSeqTrigger] = useState('MANUAL')
   const [steps, setSteps] = useState<StepDraft[]>([])
 
+  // Enroll modal state
+  const [enrollSeqId, setEnrollSeqId] = useState<string | null>(null)
+  const [enrollSearch, setEnrollSearch] = useState('')
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
+
   // Step being edited
   const [addingStepType, setAddingStepType] = useState<string | null>(null)
   const [editStepIdx, setEditStepIdx] = useState<number | null>(null)
@@ -164,6 +171,8 @@ export default function SequencesPage() {
             templateId: s.templateId,
             taskTitle: s.taskTitle,
             taskDescription: s.taskDescription,
+            linkedinAction: s.linkedinAction,
+            linkedinMessage: s.linkedinMessage,
             conditionType: s.conditionType,
             conditionValue: s.conditionValue,
             trueGotoStep: s.trueGotoStep,
@@ -262,6 +271,41 @@ export default function SequencesPage() {
     },
   })
 
+  const { data: leadsData } = useQuery({
+    queryKey: ['leads-for-enroll'],
+    queryFn: async () => {
+      const res = await fetch('/api/leads?limit=200')
+      if (!res.ok) throw new Error('Failed to fetch leads')
+      return res.json()
+    },
+    enabled: !!enrollSeqId,
+  })
+
+  const enrollMutation = useMutation({
+    mutationFn: async ({ sequenceId, leadIds }: { sequenceId: string; leadIds: string[] }) => {
+      const res = await fetch('/api/sequences/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sequenceId, leadIds }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to enroll leads')
+      }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sequences'] })
+      toast({ title: data.message || `${data.enrolled} lead(s) enrolled` })
+      setEnrollSeqId(null)
+      setSelectedLeadIds([])
+      setEnrollSearch('')
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    },
+  })
+
   const closeWizard = () => {
     setShowWizard(false)
     setWizardStep(1)
@@ -284,6 +328,9 @@ export default function SequencesPage() {
     }
     if (type === 'CONDITION') {
       newStep.conditionType = 'EMAIL_OPENED'
+    }
+    if (type === 'LINKEDIN') {
+      newStep.linkedinAction = 'CONNECT'
     }
     setSteps([...steps, newStep])
     setAddingStepType(null)
@@ -572,6 +619,45 @@ export default function SequencesPage() {
                               </div>
                             </>
                           )}
+                          {step.type === 'LINKEDIN' && (
+                            <>
+                              <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800">
+                                <MessageSquare className="inline h-3 w-3 mr-1" />
+                                LinkedIn steps create a task reminder to perform the action manually — or automatically if LinkedIn integration is connected.
+                              </div>
+                              <div>
+                                <label className="text-xs font-medium">Action Type</label>
+                                <select
+                                  className="w-full h-9 rounded-md border bg-white px-2 text-sm"
+                                  value={step.linkedinAction || 'CONNECT'}
+                                  onChange={(e) => updateStep(idx, { linkedinAction: e.target.value })}
+                                >
+                                  <option value="CONNECT">Send connection request</option>
+                                  <option value="MESSAGE">Send DM</option>
+                                  <option value="VIEW_PROFILE">View profile</option>
+                                  <option value="FOLLOW">Follow</option>
+                                </select>
+                              </div>
+                              {(step.linkedinAction === 'CONNECT' || step.linkedinAction === 'MESSAGE' || !step.linkedinAction) && (
+                                <div>
+                                  <label className="text-xs font-medium">
+                                    {step.linkedinAction === 'MESSAGE' ? 'Message Text' : 'Connection Note (optional)'}
+                                  </label>
+                                  <textarea
+                                    className="w-full min-h-[80px] rounded-md border bg-white px-3 py-2 text-sm"
+                                    value={step.linkedinMessage || ''}
+                                    onChange={(e) => updateStep(idx, { linkedinMessage: e.target.value })}
+                                    placeholder={
+                                      step.linkedinAction === 'MESSAGE'
+                                        ? 'Hi {{firstName}}, saw your work at {{company}}...'
+                                        : 'Hi {{firstName}}, I noticed you work in...'
+                                    }
+                                  />
+                                  <p className="text-[10px] text-gray-400 mt-0.5">Use {'{{firstName}}'}, {'{{company}}'} for personalisation</p>
+                                </div>
+                              )}
+                            </>
+                          )}
                           {step.type === 'CONDITION' && (
                             <>
                               <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
@@ -778,6 +864,68 @@ export default function SequencesPage() {
         </div>
       )}
 
+      {/* Enroll Leads Modal */}
+      {enrollSeqId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold">Enroll Leads</h2>
+                <p className="text-xs text-gray-500">Select leads to add to this sequence</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => { setEnrollSeqId(null); setSelectedLeadIds([]); setEnrollSearch('') }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="px-5 pt-4">
+              <Input
+                placeholder="Search leads..."
+                value={enrollSearch}
+                onChange={(e) => setEnrollSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1">
+              {(leadsData?.data ?? [])
+                .filter((l: any) => {
+                  const q = enrollSearch.toLowerCase()
+                  return !q || `${l.firstName} ${l.lastName} ${l.email} ${l.company}`.toLowerCase().includes(q)
+                })
+                .map((lead: any) => (
+                  <label key={lead.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={selectedLeadIds.includes(lead.id)}
+                      onChange={(e) => {
+                        setSelectedLeadIds(e.target.checked
+                          ? [...selectedLeadIds, lead.id]
+                          : selectedLeadIds.filter((id) => id !== lead.id))
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{lead.firstName} {lead.lastName}</p>
+                      <p className="text-xs text-gray-400 truncate">{lead.email}{lead.company ? ` · ${lead.company}` : ''}</p>
+                    </div>
+                  </label>
+                ))}
+              {(leadsData?.data ?? []).length === 0 && (
+                <p className="text-center text-sm text-gray-400 py-8">No leads found</p>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t px-5 py-4">
+              <span className="text-sm text-gray-500">{selectedLeadIds.length} selected</span>
+              <Button
+                onClick={() => enrollMutation.mutate({ sequenceId: enrollSeqId, leadIds: selectedLeadIds })}
+                disabled={selectedLeadIds.length === 0 || enrollMutation.isPending}
+              >
+                {enrollMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Enroll {selectedLeadIds.length > 0 ? selectedLeadIds.length : ''} Lead{selectedLeadIds.length !== 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-6 space-y-6">
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-4">
@@ -934,6 +1082,14 @@ export default function SequencesPage() {
 
                     {/* Actions */}
                     <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setEnrollSeqId(sequence.id); setSelectedLeadIds([]) }}
+                      >
+                        <Users className="mr-2 h-4 w-4" />
+                        Enroll
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
