@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         description: original.description,
         status: 'DRAFT',
         triggerType: original.triggerType,
-        triggerConditions: original.triggerConditions,
+        triggerConditions: original.triggerConditions ?? undefined,
         exitOnReply: original.exitOnReply,
         exitOnMeeting: original.exitOnMeeting,
         sendWindowStart: original.sendWindowStart,
