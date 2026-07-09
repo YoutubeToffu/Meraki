@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/agent-logs
 // Returns: recent agent actions, upcoming scheduled actions, sequence next steps
 export async function GET(_request: Request) {
