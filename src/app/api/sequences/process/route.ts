@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       .flatMap((e) => e.sequence.steps.map((s) => s.templateId))
       .filter((id): id is string => !!id)
     const templates = templateIds.length > 0
-      ? await prisma.emailTemplate.findMany({ where: { id: { in: [...new Set(templateIds)] } } })
+      ? await prisma.emailTemplate.findMany({ where: { id: { in: Array.from(new Set(templateIds)) } } })
       : []
     const templateMap = new Map(templates.map((t) => [t.id, t]))
 
