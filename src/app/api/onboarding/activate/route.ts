@@ -1,20 +1,22 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 import OpenAI from 'openai'
+
+export const dynamic = 'force-dynamic'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 // POST /api/onboarding/activate
 // Reads the saved growth plan + answers, calls GPT-4o to generate a full agent
 // configuration, then creates an AiCampaign and a multi-step Sequence with
-// AI-written email copy. Idempotent — returns 409 if already activated.
+// AI-written email copy. Idempotent â€” returns 409 if already activated.
 export async function POST(_request: Request) {
   try {
     const session = await getRequiredSession()
     const orgId = (session.user as any).organizationId
 
-    // ── Load saved plan ───────────────────────────────────────────────────────
+    // â”€â”€ Load saved plan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const onboarding = await prisma.onboardingSession.findUnique({
       where: { organizationId: orgId },
       include: { organization: true },
@@ -50,7 +52,7 @@ export async function POST(_request: Request) {
     const preferredChannels = answers.preferredChannels ?? 'email, LinkedIn'
     const customerGoal = answers.customerGoal ?? ''
 
-    // ── GPT-4o: generate full agent suite config ──────────────────────────────
+    // â”€â”€ GPT-4o: generate full agent suite config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       temperature: 0.6,
@@ -94,12 +96,12 @@ Sequence steps must follow this exact proven B2B cold outreach cadence:
 - Step 1 (day 0): Problem-led cold intro. Name their specific pain in sentence 1. One soft CTA (15-min call or reply).
 - Step 2 (day 3): Value-led follow-up. Lead with one concrete outcome/result your product delivers. Different angle from step 1.
 - Step 3 (day 7): Social proof or credibility angle. Reference customer type or outcome. Ask if they have this problem.
-- Step 4 (day 12): Alternative-angle email. Different hook — ROI, risk, or competitor angle. Still conversational.
+- Step 4 (day 12): Alternative-angle email. Different hook â€” ROI, risk, or competitor angle. Still conversational.
 - Step 5 (day 18): Break-up email. Short (2 sentences). Polite close. Leaves door open.
 
 Rules:
 - ALL email bodies must be plain text, 3-4 sentences MAX, no lists, no bullets, no HTML
-- Each subject line must be unique, curiosity-driven, under 50 chars — NO spam words
+- Each subject line must be unique, curiosity-driven, under 50 chars â€” NO spam words
 - Use these personalisation tokens where natural: {{firstName}}, {{company}}, {{jobTitle}}
 - The aiPrompt for each step should give the AI 1-2 specific personalisation instructions
 - Do NOT use generic filler. Make every line specific to the ICP pain and value prop.`,
@@ -165,7 +167,7 @@ ${plan.slice(0, 3500)}`,
       )
     }
 
-    // ── Create AiCampaign ─────────────────────────────────────────────────────
+    // â”€â”€ Create AiCampaign â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const aiCampaign = await prisma.aiCampaign.create({
       data: {
         name: campaignConfig.name,
@@ -192,7 +194,7 @@ ${plan.slice(0, 3500)}`,
       },
     })
 
-    // ── Create Sequence with steps ────────────────────────────────────────────
+    // â”€â”€ Create Sequence with steps â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const sequence = await prisma.sequence.create({
       data: {
         name: sequenceConfig.name,
@@ -222,7 +224,7 @@ ${plan.slice(0, 3500)}`,
       },
     })
 
-    // ── Persist activation manifest ───────────────────────────────────────────
+    // â”€â”€ Persist activation manifest â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const manifest = {
       aiCampaignId: aiCampaign.id,
       aiCampaignName: aiCampaign.name,
@@ -256,7 +258,7 @@ ${plan.slice(0, 3500)}`,
   }
 }
 
-// GET /api/onboarding/activate — Check activation status
+// GET /api/onboarding/activate â€” Check activation status
 export async function GET(_request: Request) {
   try {
     const session = await getRequiredSession()

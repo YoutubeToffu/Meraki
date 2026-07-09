@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const fieldSchema = z.object({
   id: z.string(),
@@ -34,7 +36,7 @@ const createSchema = z.object({
 
 const updateSchema = createSchema.partial().extend({ id: z.string() })
 
-// GET /api/forms — list all forms for org
+// GET /api/forms â€” list all forms for org
 export async function GET(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -52,7 +54,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/forms — create form
+// POST /api/forms â€” create form
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -96,7 +98,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/forms — update form
+// PATCH /api/forms â€” update form
 export async function PATCH(request: Request) {
   try {
     const session = await getRequiredSession()

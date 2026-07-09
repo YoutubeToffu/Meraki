@@ -1,5 +1,7 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
+
+export const dynamic = 'force-dynamic'
 
 const formSubmissionSchema = z.object({
   formId: z.string().min(1),
@@ -12,7 +14,7 @@ const formSubmissionSchema = z.object({
   }).optional(),
 })
 
-// POST /api/forms/submit — Public: creates/updates a Lead from a form submission
+// POST /api/forms/submit â€” Public: creates/updates a Lead from a form submission
 export async function POST(request: Request) {
   try {
     const body = await request.json()

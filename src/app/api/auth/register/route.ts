@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import prisma from '@/lib/prisma'
 import { z } from 'zod'
 import { generateSlug } from '@/lib/utils'
+
+export const dynamic = 'force-dynamic'
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),

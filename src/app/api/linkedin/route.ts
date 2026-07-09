@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
-// GET /api/linkedin — LinkedIn outreach overview
+export const dynamic = 'force-dynamic'
+
+// GET /api/linkedin â€” LinkedIn outreach overview
 // Returns: stats, recent LinkedIn activities, leads with LinkedIn profiles
 export async function GET(request: Request) {
   try {
@@ -110,7 +112,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/linkedin — Log a LinkedIn activity manually
+// POST /api/linkedin â€” Log a LinkedIn activity manually
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()

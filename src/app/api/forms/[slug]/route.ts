@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/forms/[slug] — public: return form config for rendering
 export async function GET(
   _request: Request,

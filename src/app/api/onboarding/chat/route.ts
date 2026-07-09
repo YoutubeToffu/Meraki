@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import OpenAI from 'openai'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -31,13 +33,13 @@ const STAGE_PROMPTS: Record<string, string> = {
 
 Your job right now: learn about their company. Ask about their company name, industry, product category, how long they've been live, and their current team size. 
 
-Be conversational — ask one or two questions at a time. Acknowledge their answers warmly before asking the next question. Keep responses under 80 words. When you have enough context (name, industry, stage, team size), say: "Great, I have a good picture of your company. Let's talk about your product next."`,
+Be conversational â€” ask one or two questions at a time. Acknowledge their answers warmly before asking the next question. Keep responses under 80 words. When you have enough context (name, industry, stage, team size), say: "Great, I have a good picture of your company. Let's talk about your product next."`,
 
   product_offer: `You are a growth strategist helping a B2B SaaS founder define their offer. You already know their company basics.
 
 Your job: understand their product deeply. Ask what it does, the core value promise (what outcome does it deliver?), how they currently price or charge (or plan to), and what their primary call-to-action is (demo, trial, freemium, etc.).
 
-Be conversational — one or two questions at a time. Under 80 words. When done: "Perfect. Now let's understand your ideal customer."`,
+Be conversational â€” one or two questions at a time. Under 80 words. When done: "Perfect. Now let's understand your ideal customer."`,
 
   target_customer: `You are a growth strategist identifying the ICP (ideal customer profile) for a B2B SaaS founder.
 
@@ -55,7 +57,7 @@ Conversational, under 80 words per message. When done: "Clear picture. Now let's
 
 Your job: define their goal. Ask how many customers they want in the next 30-90 days, what revenue milestone matters most right now, how urgent this is for their business, and whether they have a specific deadline (fundraising, launch event, etc.).
 
-Conversational, under 80 words. When done: "Almost there. Last question — your preferred channels."`,
+Conversational, under 80 words. When done: "Almost there. Last question â€” your preferred channels."`,
 
   channel_preferences: `You are a growth strategist completing the final intake for a B2B SaaS founder.
 
@@ -64,7 +66,7 @@ Your job: understand their channel preferences and constraints. Ask whether they
 Conversational, under 80 words. When done: "I have everything I need to build your growth plan. Click Generate Plan when ready!"`,
 }
 
-// POST /api/onboarding/chat — Single-turn conversational question flow
+// POST /api/onboarding/chat â€” Single-turn conversational question flow
 export async function POST(request: Request) {
   try {
     await getRequiredSession()

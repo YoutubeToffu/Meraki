@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const createSequenceSchema = z.object({
   name: z.string().min(1),
@@ -330,7 +332,7 @@ export async function DELETE(request: Request) {
     const seq = await prisma.sequence.findFirst({ where: { id, organizationId: orgId } })
     if (!seq) return NextResponse.json({ error: 'Sequence not found' }, { status: 404 })
 
-    // Check for active enrollments — archive instead of delete
+    // Check for active enrollments â€” archive instead of delete
     const activeEnrollments = await prisma.sequenceEnrollment.count({
       where: { sequenceId: id, status: 'ACTIVE' },
     })
@@ -345,7 +347,7 @@ export async function DELETE(request: Request) {
       })
     }
 
-    // Safe to delete — remove steps and enrollments first
+    // Safe to delete â€” remove steps and enrollments first
     await prisma.$transaction([
       prisma.sequenceStep.deleteMany({ where: { sequenceId: id } }),
       prisma.sequenceEnrollment.deleteMany({ where: { sequenceId: id } }),

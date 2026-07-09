@@ -3,6 +3,8 @@ import { z } from 'zod'
 import prisma from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
+export const dynamic = 'force-dynamic'
+
 const updateTemplateSchema = z.object({
   name: z.string().min(1).optional(),
   subject: z.string().min(1).optional(),

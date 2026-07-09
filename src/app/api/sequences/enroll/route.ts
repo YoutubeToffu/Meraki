@@ -1,14 +1,16 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const enrollSchema = z.object({
   sequenceId: z.string().min(1),
   leadIds: z.array(z.string().min(1)).min(1),
 })
 
-// POST /api/sequences/enroll — Enroll leads into a sequence
+// POST /api/sequences/enroll â€” Enroll leads into a sequence
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -109,7 +111,7 @@ export async function POST(request: Request) {
   }
 }
 
-// GET /api/sequences/enroll?sequenceId=xxx — List enrollments for a sequence
+// GET /api/sequences/enroll?sequenceId=xxx â€” List enrollments for a sequence
 export async function GET(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -157,7 +159,7 @@ export async function GET(request: Request) {
   }
 }
 
-// PATCH /api/sequences/enroll — Pause/resume enrollment
+// PATCH /api/sequences/enroll â€” Pause/resume enrollment
 export async function PATCH(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -216,7 +218,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-// DELETE /api/sequences/enroll — Remove a lead from a sequence
+// DELETE /api/sequences/enroll â€” Remove a lead from a sequence
 export async function DELETE(request: Request) {
   try {
     const session = await getRequiredSession()

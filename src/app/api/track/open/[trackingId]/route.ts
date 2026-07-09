@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/track/open/[trackingId] — 1x1 tracking pixel
 export async function GET(
   request: Request,

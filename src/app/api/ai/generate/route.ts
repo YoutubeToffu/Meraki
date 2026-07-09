@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import OpenAI from 'openai'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -119,8 +121,8 @@ Never use emojis in emails unless the tone is casual. Keep paragraphs short (2-3
 Generate 3 email subject lines. Each should be under 60 characters, create curiosity, and be personalized. Return them numbered 1-3, one per line. No quotes around them.`,
 
     EMAIL_BODY: `${base}
-Write a cold outreach email. Structure: personalized opening referencing something specific about the prospect → 1-2 sentences on the pain point → brief value prop (no bullet-point lists of features) → soft CTA (question, not a demand). Keep under 150 words.
-Do NOT include a subject line. Do NOT include placeholders like [Your Name] — leave the sign-off as just a dash or "Best,".`,
+Write a cold outreach email. Structure: personalized opening referencing something specific about the prospect â†’ 1-2 sentences on the pain point â†’ brief value prop (no bullet-point lists of features) â†’ soft CTA (question, not a demand). Keep under 150 words.
+Do NOT include a subject line. Do NOT include placeholders like [Your Name] â€” leave the sign-off as just a dash or "Best,".`,
 
     LINKEDIN_MESSAGE: `${base}
 Write a LinkedIn connection request or message. Must be under 300 characters for connection requests, under 500 for DMs. Be human, not salesy. Reference something specific. No "I'd love to pick your brain."`,
@@ -130,14 +132,14 @@ Write a follow-up email for someone who hasn't responded. Do NOT repeat the orig
 
     OBJECTION_RESPONSE: `${base}
 The prospect has raised an objection. Generate 3 reply options:
-1. **Soft reply** — empathetic, low-pressure, keeps the door open
-2. **Confident reply** — addresses the concern directly with evidence
-3. **Value-driven reply** — reframes around ROI or a specific benefit
+1. **Soft reply** â€” empathetic, low-pressure, keeps the door open
+2. **Confident reply** â€” addresses the concern directly with evidence
+3. **Value-driven reply** â€” reframes around ROI or a specific benefit
 
 Label each clearly. Keep each under 80 words.`,
 
     NEXT_ACTION: `${base}
-You are an AI sales coach. Based on the lead's profile and engagement history, recommend the top 3 next actions ranked by likelihood of advancing the deal. Be specific and actionable — not generic advice. Include timing recommendations.`,
+You are an AI sales coach. Based on the lead's profile and engagement history, recommend the top 3 next actions ranked by likelihood of advancing the deal. Be specific and actionable â€” not generic advice. Include timing recommendations.`,
 
     LEAD_SUMMARY: `${base}
 Generate a concise lead intelligence brief. Include: key insights about the person/company, likely pain points, recommended outreach angle, potential objections to prepare for, and a "Why this lead is a fit" score (0-100) with reasoning.`,
@@ -226,8 +228,8 @@ function buildUserPrompt(type: string, context: any): string {
     return `The prospect said: "${context.customPrompt}"\n\n${parts.filter(p => !p.startsWith('Additional')).join('\n')}`
   }
 
-  const lengthHint = context.length === 'short' ? '\nKeep it concise — under 75 words.' :
-                     context.length === 'long' ? '\nThis can be detailed — up to 300 words.' : ''
+  const lengthHint = context.length === 'short' ? '\nKeep it concise â€” under 75 words.' :
+                     context.length === 'long' ? '\nThis can be detailed â€” up to 300 words.' : ''
 
   return parts.join('\n') + lengthHint
 }

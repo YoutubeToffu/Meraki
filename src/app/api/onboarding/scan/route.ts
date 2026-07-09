@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import OpenAI from 'openai'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -15,7 +17,7 @@ const scanSchema = z.object({
     ),
 })
 
-// ── SSRF guard ──────────────────────────────────────────────────────────────
+// â”€â”€ SSRF guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Block requests to private/loopback addresses to prevent server-side
 // request forgery attacks.
 function isPrivateOrLoopback(hostname: string): boolean {
@@ -43,7 +45,7 @@ function isPrivateOrLoopback(hostname: string): boolean {
   return false
 }
 
-// ── HTML → plain text ────────────────────────────────────────────────────────
+// â”€â”€ HTML â†’ plain text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function htmlToText(html: string): string {
   return html
     // Remove script/style/noscript blocks entirely
@@ -62,9 +64,9 @@ function htmlToText(html: string): string {
     .trim()
 }
 
-// ── Detect JS-heavy SPA ──────────────────────────────────────────────────────
+// â”€â”€ Detect JS-heavy SPA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Returns true when the page has very little readable text relative to its
-// total size — a strong signal that real content is rendered client-side.
+// total size â€” a strong signal that real content is rendered client-side.
 function isJsHeavy(html: string, plainText: string): boolean {
   const scriptCount = (html.match(/<script/gi) || []).length
   const htmlSize = html.length
@@ -73,7 +75,7 @@ function isJsHeavy(html: string, plainText: string): boolean {
   return scriptCount >= 5 && textRatio < 0.12
 }
 
-// ── Jina AI Reader fallback ───────────────────────────────────────────────────
+// â”€â”€ Jina AI Reader fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // https://r.jina.ai/{url} returns a fully JS-rendered page as clean markdown.
 // Free, no API key required, handles SPAs.
 async function fetchViaJina(url: string): Promise<string> {
@@ -102,8 +104,8 @@ async function fetchViaJina(url: string): Promise<string> {
   }
 }
 
-// POST /api/onboarding/scan — Fetch a URL and extract product information
-// Strategy: static fetch first → if JS-heavy or thin content → Jina Reader fallback
+// POST /api/onboarding/scan â€” Fetch a URL and extract product information
+// Strategy: static fetch first â†’ if JS-heavy or thin content â†’ Jina Reader fallback
 export async function POST(request: Request) {
   try {
     await getRequiredSession()
@@ -111,7 +113,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { url } = scanSchema.parse(body)
 
-    // SSRF guard — validate hostname before any outbound request
+    // SSRF guard â€” validate hostname before any outbound request
     let parsedUrl: URL
     try {
       parsedUrl = new URL(url)
@@ -130,7 +132,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    // ── Step 1: Static fetch ──────────────────────────────────────────────────
+    // â”€â”€ Step 1: Static fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let pageText = ''
     let fetchMethod: 'static' | 'jina' = 'static'
 
@@ -154,7 +156,7 @@ export async function POST(request: Request) {
           const html = await res.text()
           const candidate = htmlToText(html)
 
-          // ── Step 2: JS-heavy detection → fall back to Jina ─────────────────
+          // â”€â”€ Step 2: JS-heavy detection â†’ fall back to Jina â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           if (isJsHeavy(html, candidate) || candidate.length < 300) {
             fetchMethod = 'jina'
           } else {
@@ -168,7 +170,7 @@ export async function POST(request: Request) {
       }
     } catch (fetchErr: any) {
       if (fetchErr?.name === 'AbortError') {
-        fetchMethod = 'jina' // Timeout — try Jina (it has its own cache)
+        fetchMethod = 'jina' // Timeout â€” try Jina (it has its own cache)
       } else {
         return NextResponse.json(
           { error: 'Could not reach the URL. Please check it is publicly accessible.' },
@@ -177,7 +179,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── Step 3: Jina Reader for dynamic / JS-rendered sites ──────────────────
+    // â”€â”€ Step 3: Jina Reader for dynamic / JS-rendered sites â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (fetchMethod === 'jina') {
       try {
         const rendered = await fetchViaJina(url)
@@ -207,7 +209,7 @@ export async function POST(request: Request) {
           role: 'system',
           content: `You are an expert at extracting B2B SaaS product information from website content. The content may be raw text or rendered markdown from a JavaScript-heavy site.
 
-Extract the following fields from the page text. If a field cannot be confidently determined, return null for that field. Return ONLY valid JSON — no markdown, no explanation.
+Extract the following fields from the page text. If a field cannot be confidently determined, return null for that field. Return ONLY valid JSON â€” no markdown, no explanation.
 
 {
   "companyName": "Company or product name",

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/unsubscribe/[token] — Handle unsubscribe link clicks
 // token = Email.trackingId (cuid, not guessable)
 export async function GET(

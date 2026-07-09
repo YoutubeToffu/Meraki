@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
-// GET /api/analytics — Real-time analytics from database
+export const dynamic = 'force-dynamic'
+
+// GET /api/analytics â€” Real-time analytics from database
 export async function GET() {
   try {
     const session = await getRequiredSession()

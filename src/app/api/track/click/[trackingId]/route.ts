@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/track/click/[trackingId]?url=... — Click tracking redirect
 export async function GET(
   request: Request,

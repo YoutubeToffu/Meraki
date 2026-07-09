@@ -1,14 +1,16 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Resend } from 'resend'
 import OpenAI from 'openai'
+
+export const dynamic = 'force-dynamic'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const fromAddress = process.env.EMAIL_FROM || 'noreply@meraki.app'
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-// POST /api/sequences/process — Process pending sequence steps
+// POST /api/sequences/process â€” Process pending sequence steps
 // Called via cron job or manually. Secured by CRON_SECRET header.
 export async function POST(request: Request) {
   try {
@@ -190,7 +192,7 @@ export async function POST(request: Request) {
         const isAllowedDay = sequence.sendDays.includes(currentDay)
 
         if (!inWindow || !isAllowedDay) {
-          // Defer — unlock and don't advance
+          // Defer â€” unlock and don't advance
           await prisma.sequenceEnrollment.update({
             where: { id: enrollment.id },
             data: { lockedAt: null },
@@ -566,7 +568,7 @@ async function evaluateCondition(
       return freshLead?.status === (step.conditionValue || '').toUpperCase()
     }
     default:
-      // Unknown condition → treat as true (continue)
+      // Unknown condition â†’ treat as true (continue)
       return true
   }
 }
@@ -594,11 +596,11 @@ async function generateAiEmail(
 
 Rules:
 - Keep emails short (3-5 sentences for the body)
-- Be conversational and human — no corporate jargon
+- Be conversational and human â€” no corporate jargon
 - Include a clear, soft call-to-action
 - Never use generic openings like "I hope this email finds you well"
 - Reference the lead's company and role naturally
-- Do NOT include the sender's name/signature — that's added automatically
+- Do NOT include the sender's name/signature â€” that's added automatically
 - Respond in valid JSON format: {"subject": "...", "body": "..."}`
 
   let userPrompt = ''

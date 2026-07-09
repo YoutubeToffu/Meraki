@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const createSchema = z.object({
   leadId: z.string().min(1),
@@ -23,7 +25,7 @@ const updateSchema = z.object({
   meetingUrl: z.string().url().optional().nullable(),
 })
 
-// GET /api/meetings — List meetings for org
+// GET /api/meetings â€” List meetings for org
 export async function GET(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -91,7 +93,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/meetings — Create meeting
+// POST /api/meetings â€” Create meeting
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -151,7 +153,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/meetings — Update meeting status / outcome / notes
+// PATCH /api/meetings â€” Update meeting status / outcome / notes
 export async function PATCH(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -204,7 +206,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-// DELETE /api/meetings — Delete meeting
+// DELETE /api/meetings â€” Delete meeting
 export async function DELETE(request: Request) {
   try {
     const session = await getRequiredSession()

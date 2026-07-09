@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import OpenAI from 'openai'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -35,7 +37,7 @@ const answersSchema = z.object({
   rawTranscript: z.string().optional(),
 })
 
-// POST /api/onboarding/plan — Generate structured growth plan from collected answers
+// POST /api/onboarding/plan â€” Generate structured growth plan from collected answers
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -48,28 +50,28 @@ export async function POST(request: Request) {
 
 Structure your response in exactly this order using these section headers:
 
-## 🎯 ICP Definition
-One precise ideal customer profile — role, company type, size, industry, specific pain, buying trigger.
+## ðŸŽ¯ ICP Definition
+One precise ideal customer profile â€” role, company type, size, industry, specific pain, buying trigger.
 
-## 💡 Wedge Offer
+## ðŸ’¡ Wedge Offer
 One sharp offer statement (problem + solution + proof point + CTA). Under 50 words.
 
-## 🚀 30-Day Demand Channels
+## ðŸš€ 30-Day Demand Channels
 3-4 specific channels ranked by expected ROI for this business. For each: channel name, why it fits, and the first concrete action to take.
 
-## 🤖 Recommended Agents to Activate
+## ðŸ¤– Recommended Agents to Activate
 Which Meraki agents to launch first and why. Choose from: Demand Sourcing Agent, Messaging Agent, Deliverability Agent, Qualification Agent, Demo Acceleration Agent, Deal Recovery Agent.
 
-## 📋 First 30-Day Execution Steps
+## ðŸ“‹ First 30-Day Execution Steps
 Exactly 10 numbered steps. Each step must be concrete, assigned to a time window (Day 1-3, Day 4-7, Week 2, Week 3-4), and actionable without ambiguity.
 
-## 📊 KPI Targets
+## ðŸ“Š KPI Targets
 A table with: Stage | Target | Timeline. Cover: New contacts/day, Positive reply rate, Qualified meetings/week, Demo-to-close rate, First customer date.
 
-## ⚠️ Top 3 Risks
+## âš ï¸ Top 3 Risks
 The 3 most likely failure modes for this specific business and how to mitigate each.
 
-Be specific to this company — no generic advice. Use their actual product, ICP, and constraints in every section.`
+Be specific to this company â€” no generic advice. Use their actual product, ICP, and constraints in every section.`
 
     const userPrompt = `Here are the founder's intake answers:
 
@@ -145,7 +147,7 @@ ${rawTranscript ? `\nFull conversation transcript for additional context:\n${raw
   }
 }
 
-// GET /api/onboarding/plan — Load saved plan for this org
+// GET /api/onboarding/plan â€” Load saved plan for this org
 export async function GET() {
   try {
     const session = await getRequiredSession()

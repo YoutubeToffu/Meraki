@@ -1,14 +1,16 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Resend } from 'resend'
 import OpenAI from 'openai'
+
+export const dynamic = 'force-dynamic'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 const fromAddress = process.env.EMAIL_FROM || 'noreply@meraki.app'
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
-// POST /api/autopilot/process — The AI Brain
+// POST /api/autopilot/process â€” The AI Brain
 // Processes all active AI campaigns autonomously.
 // Called via cron or manually.
 export async function POST(request: Request) {
@@ -148,7 +150,7 @@ export async function POST(request: Request) {
           select: { subject: true, body: true, status: true, sentAt: true, openedAt: true, clickedAt: true, repliedAt: true },
         })
 
-        // Check if lead already replied — if so, stop
+        // Check if lead already replied â€” if so, stop
         const hasReplied = previousEmails.some((e) => e.repliedAt != null)
         if (hasReplied) {
           await prisma.aiOutreach.update({
@@ -211,7 +213,7 @@ export async function POST(request: Request) {
           }
 
           if (aiDecision.action === 'SEND_EMAIL') {
-            // AI generated the email — send it
+            // AI generated the email â€” send it
             const trackingId = generateTrackingId()
             const subject = aiDecision.subject!
             let body = aiDecision.body!
@@ -257,7 +259,7 @@ export async function POST(request: Request) {
               data: {
                 type: 'EMAIL_SENT',
                 title: `AI Autopilot: ${subject}`,
-                description: `Campaign "${campaign.name}" — Step ${outreach.stepNumber + 1}. AI reasoning: ${aiDecision.reasoning}`,
+                description: `Campaign "${campaign.name}" â€” Step ${outreach.stepNumber + 1}. AI reasoning: ${aiDecision.reasoning}`,
                 leadId: lead.id,
               },
             })
@@ -336,7 +338,7 @@ export async function POST(request: Request) {
 }
 
 // ================================================================
-// THE AI BRAIN — Decides what to do for each lead
+// THE AI BRAIN â€” Decides what to do for each lead
 // ================================================================
 interface AiDecision {
   action: 'SEND_EMAIL' | 'WAIT_MONTHS' | 'STOP'
@@ -371,21 +373,21 @@ async function getAiDecision(params: {
   const systemPrompt = `You are an expert AI sales development representative (SDR). You autonomously manage email outreach campaigns.
 
 Your job: Decide the BEST next action for reaching this specific lead. You can:
-1. SEND_EMAIL — Write and send a personalized email
-2. WAIT_MONTHS — Pause outreach and revisit in X days (use when timing isn't right)
-3. STOP — Stop outreach to this lead entirely (use when it's clearly not a fit or you've exhausted attempts)
+1. SEND_EMAIL â€” Write and send a personalized email
+2. WAIT_MONTHS â€” Pause outreach and revisit in X days (use when timing isn't right)
+3. STOP â€” Stop outreach to this lead entirely (use when it's clearly not a fit or you've exhausted attempts)
 
 RULES:
 - Keep emails SHORT (3-5 sentences). Be human, conversational, no corporate jargon.
-- NEVER use "I hope this email finds you well" or similar clichés
-- Each follow-up must take a DIFFERENT angle — don't repeat yourself
+- NEVER use "I hope this email finds you well" or similar clichÃ©s
+- Each follow-up must take a DIFFERENT angle â€” don't repeat yourself
 - If the lead hasn't opened any of 3+ emails, try a completely different subject line style
 - If the lead opened but didn't reply after 2+ emails, try a shorter/more direct ask
 - After ${campaign.maxEmails} emails with no engagement, recommend STOP
 - Suggest follow-up timing: 2-3 days for warm leads, 4-7 for cold, 60-90 days for WAIT_MONTHS
-- Use the campaign's overall performance data to improve — if certain angles work better, lean into those
+- Use the campaign's overall performance data to improve â€” if certain angles work better, lean into those
 - Tone: ${campaign.tone}
-- Do NOT include sender name/signature — that's added separately
+- Do NOT include sender name/signature â€” that's added separately
 
 IMPORTANT: Respond in valid JSON format ONLY:
 {

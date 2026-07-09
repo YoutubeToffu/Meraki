@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -18,7 +20,7 @@ const createSchema = z.object({
   leadIds: z.array(z.string()).optional(), // Specific leads to target, or empty = all eligible leads
 })
 
-// GET /api/autopilot — List AI campaigns
+// GET /api/autopilot â€” List AI campaigns
 export async function GET(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -69,7 +71,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/autopilot — Create AI campaign + enroll leads
+// POST /api/autopilot â€” Create AI campaign + enroll leads
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -155,7 +157,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { data: campaign, message: `AI Autopilot created — ${enrolledCount} leads enrolled` },
+      { data: campaign, message: `AI Autopilot created â€” ${enrolledCount} leads enrolled` },
       { status: 201 },
     )
   } catch (error) {
@@ -168,7 +170,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/autopilot — Pause / Resume / Stop
+// PATCH /api/autopilot â€” Pause / Resume / Stop
 export async function PATCH(request: Request) {
   try {
     const session = await getRequiredSession()
@@ -195,7 +197,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-// DELETE /api/autopilot — Delete campaign
+// DELETE /api/autopilot â€” Delete campaign
 export async function DELETE(request: Request) {
   try {
     const session = await getRequiredSession()

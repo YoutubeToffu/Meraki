@@ -1,13 +1,15 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID ?? ''
 const LINKEDIN_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET ?? ''
 const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/linkedin/callback`
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-// GET /api/integrations/linkedin/callback — Handle LinkedIn OAuth callback
+// GET /api/integrations/linkedin/callback â€” Handle LinkedIn OAuth callback
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
@@ -22,7 +24,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    // We need the session — but OAuth redirects lose the session cookie in some setups.
+    // We need the session â€” but OAuth redirects lose the session cookie in some setups.
     // We'll rely on the session cookie being present.
     const session = await getRequiredSession()
     const orgId = (session.user as any).organizationId

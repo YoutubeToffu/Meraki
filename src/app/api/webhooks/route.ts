@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import crypto from 'crypto'
+
+export const dynamic = 'force-dynamic'
 
 // Webhook event types
 const webhookEventSchema = z.object({

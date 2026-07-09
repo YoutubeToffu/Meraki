@@ -1,9 +1,11 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 import { industryPlaybooks } from '@/lib/playbooks'
 
-// GET /api/templates/playbooks — list available playbooks with install status
+export const dynamic = 'force-dynamic'
+
+// GET /api/templates/playbooks â€” list available playbooks with install status
 export async function GET() {
   try {
     const session = await getRequiredSession()
@@ -30,7 +32,7 @@ export async function GET() {
   }
 }
 
-// POST /api/templates/playbooks — install a playbook's templates
+// POST /api/templates/playbooks â€” install a playbook's templates
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()

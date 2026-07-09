@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-// POST /api/webhooks/resend — Handle Resend webhook events
+export const dynamic = 'force-dynamic'
+
+// POST /api/webhooks/resend â€” Handle Resend webhook events
 // Configure in Resend dashboard: https://resend.com/webhooks
 // Events: email.delivered, email.opened, email.clicked, email.bounced, email.complained
 export async function POST(request: Request) {
@@ -109,7 +111,7 @@ export async function POST(request: Request) {
       }
 
       case 'email.complained': {
-        // Spam complaint — treat as unsubscribe
+        // Spam complaint â€” treat as unsubscribe
         if (data?.email_id) {
           const email = await prisma.email.findFirst({
             where: { messageId: data.email_id },

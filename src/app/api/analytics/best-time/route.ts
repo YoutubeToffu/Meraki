@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
-// GET /api/analytics/best-time — Analyze email engagement data to find optimal send times
+export const dynamic = 'force-dynamic'
+
+// GET /api/analytics/best-time â€” Analyze email engagement data to find optimal send times
 export async function GET() {
   try {
     const session = await getRequiredSession()

@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
-// GET /api/integrations — list all integrations for the org
+export const dynamic = 'force-dynamic'
+
+// GET /api/integrations â€” list all integrations for the org
 export async function GET(_request: Request) {
   try {
     const session = await getRequiredSession()
@@ -55,7 +57,7 @@ export async function GET(_request: Request) {
   }
 }
 
-// DELETE /api/integrations — disconnect an integration
+// DELETE /api/integrations â€” disconnect an integration
 export async function DELETE(request: Request) {
   try {
     const session = await getRequiredSession()

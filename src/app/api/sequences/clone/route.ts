@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
 
-// POST /api/sequences/clone — Duplicate a sequence with all its steps
+export const dynamic = 'force-dynamic'
+
+// POST /api/sequences/clone â€” Duplicate a sequence with all its steps
 export async function POST(request: Request) {
   try {
     const session = await getRequiredSession()

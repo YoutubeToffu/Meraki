@@ -1,10 +1,12 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
+
+export const dynamic = 'force-dynamic'
 
 const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID ?? ''
 const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/linkedin/callback`
 
-// GET /api/integrations/linkedin/connect — Initiate LinkedIn OAuth
+// GET /api/integrations/linkedin/connect â€” Initiate LinkedIn OAuth
 export async function GET(_request: Request) {
   try {
     await getRequiredSession()

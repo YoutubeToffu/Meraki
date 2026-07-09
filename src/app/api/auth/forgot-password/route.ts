@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { Resend } from 'resend'
 import prisma from '@/lib/prisma'
 import { z } from 'zod'
+
+export const dynamic = 'force-dynamic'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
