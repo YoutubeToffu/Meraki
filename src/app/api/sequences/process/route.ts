@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     // Check daily send count per sequence for throttling
     const todayStart = new Date(now)
     todayStart.setHours(0, 0, 0, 0)
-    const sequenceIds = [...new Set(dueEnrollments.map((e) => e.sequenceId))]
+    const sequenceIds = Array.from(new Set(dueEnrollments.map((e) => e.sequenceId)))
     const dailyCounts = new Map<string, number>()
     for (const seqId of sequenceIds) {
       const count = await prisma.email.count({
