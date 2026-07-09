@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -29,7 +29,7 @@ const CONNECT_URLS: Record<string, string> = {
   LINKEDIN: '/api/integrations/linkedin/connect',
 }
 
-export default function IntegrationsPage() {
+function IntegrationsContent() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
@@ -191,5 +191,13 @@ export default function IntegrationsPage() {
         </Card>
       </div>
     </>
+  )
+}
+
+export default function IntegrationsPage() {
+  return (
+    <Suspense>
+      <IntegrationsContent />
+    </Suspense>
   )
 }
