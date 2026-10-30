@@ -28,6 +28,11 @@ const navigation = [
     icon: LayoutDashboard,
   },
   {
+    name: 'Growth Planner',
+    href: '/dashboard/onboarding',
+    icon: Target,
+  },
+  {
     name: 'Leads',
     href: '/dashboard/leads',
     icon: Users,
@@ -71,11 +76,6 @@ const navigation = [
     name: 'AI Autopilot',
     href: '/dashboard/autopilot',
     icon: Bot,
-  },
-  {
-    name: 'Growth Planner',
-    href: '/dashboard/onboarding',
-    icon: Target,
   },
   {
     name: 'Analytics',
