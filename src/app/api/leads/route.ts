@@ -59,6 +59,18 @@ export async function GET(request: Request) {
       ]
     }
 
+    // Hide leads already enrolled in the given sequence
+    const excludeSequenceId = searchParams.get('excludeSequenceId')
+    if (excludeSequenceId) {
+      where.sequenceEnrollments = { none: { sequenceId: excludeSequenceId } }
+    }
+
+    // Return every matching lead id (used by "Select all")
+    if (searchParams.get('idsOnly') === 'true') {
+      const rows = await prisma.lead.findMany({ where, select: { id: true }, orderBy: { createdAt: 'desc' } })
+      return NextResponse.json({ ids: rows.map((r) => r.id) })
+    }
+
     const allowedSortFields = ['createdAt', 'updatedAt', 'score', 'firstName', 'lastName', 'company']
     const orderField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt'
 

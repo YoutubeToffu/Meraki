@@ -283,15 +283,35 @@ export default function SequencesPage() {
     },
   })
 
-  const { data: leadsData } = useQuery({
-    queryKey: ['leads-for-enroll'],
+  const { data: leadsData, isLoading: leadsLoading } = useQuery({
+    queryKey: ['leads-for-enroll', enrollSeqId, enrollSearch],
     queryFn: async () => {
-      const res = await fetch('/api/leads?limit=200')
+      const params = new URLSearchParams({ limit: '100', excludeSequenceId: enrollSeqId! })
+      if (enrollSearch.trim()) params.set('search', enrollSearch.trim())
+      const res = await fetch(`/api/leads?${params}`)
       if (!res.ok) throw new Error('Failed to fetch leads')
       return res.json()
     },
     enabled: !!enrollSeqId,
   })
+
+  const [selectingAll, setSelectingAll] = useState(false)
+  const selectAllLeads = async () => {
+    if (!enrollSeqId) return
+    setSelectingAll(true)
+    try {
+      const params = new URLSearchParams({ idsOnly: 'true', excludeSequenceId: enrollSeqId })
+      if (enrollSearch.trim()) params.set('search', enrollSearch.trim())
+      const res = await fetch(`/api/leads?${params}`)
+      if (!res.ok) throw new Error('Failed to fetch leads')
+      const { ids } = await res.json()
+      setSelectedLeadIds(ids)
+    } catch (err) {
+      toast({ title: 'Error', description: (err as Error).message, variant: 'destructive' })
+    } finally {
+      setSelectingAll(false)
+    }
+  }
 
   const enrollMutation = useMutation({
     mutationFn: async ({ sequenceId, leadIds }: { sequenceId: string; leadIds: string[] }) => {
@@ -928,12 +948,19 @@ export default function SequencesPage() {
                 onChange={(e) => setEnrollSearch(e.target.value)}
               />
             </div>
+            <div className="flex items-center justify-between px-5 pt-3 text-sm">
+              <span className="text-gray-500">{leadsData?.pagination?.total ?? 0} available</span>
+              <div className="flex gap-3">
+                <button type="button" className="text-blue-600 hover:underline disabled:opacity-50" onClick={selectAllLeads} disabled={selectingAll || !(leadsData?.pagination?.total > 0)}>
+                  {selectingAll ? 'Selecting...' : `Select all${leadsData?.pagination?.total ? ` (${leadsData.pagination.total})` : ''}`}
+                </button>
+                {selectedLeadIds.length > 0 && (
+                  <button type="button" className="text-gray-500 hover:underline" onClick={() => setSelectedLeadIds([])}>Clear</button>
+                )}
+              </div>
+            </div>
             <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1">
               {(leadsData?.data ?? [])
-                .filter((l: any) => {
-                  const q = enrollSearch.toLowerCase()
-                  return !q || `${l.firstName} ${l.lastName} ${l.email} ${l.company}`.toLowerCase().includes(q)
-                })
                 .map((lead: any) => (
                   <label key={lead.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer hover:bg-gray-50">
                     <input
@@ -952,8 +979,8 @@ export default function SequencesPage() {
                     </div>
                   </label>
                 ))}
-              {(leadsData?.data ?? []).length === 0 && (
-                <p className="text-center text-sm text-gray-400 py-8">No leads found</p>
+              {!leadsLoading && (leadsData?.data ?? []).length === 0 && (
+                <p className="text-center text-sm text-gray-400 py-8">No un-enrolled leads found</p>
               )}
             </div>
             <div className="flex items-center justify-between border-t px-5 py-4">
