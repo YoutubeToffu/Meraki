@@ -2,11 +2,9 @@
 import { z } from 'zod'
 import prisma from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
-import { Resend } from 'resend'
+import { getOrgMailer, EMAIL_NOT_CONFIGURED_MESSAGE } from '@/lib/email-config'
 
 export const dynamic = 'force-dynamic'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 const createCampaignSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -74,6 +72,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No valid leads found' }, { status: 404 })
     }
 
+    const mailer = sendNow ? await getOrgMailer(orgId) : null
+    if (sendNow && !mailer) {
+      return NextResponse.json({ error: EMAIL_NOT_CONFIGURED_MESSAGE }, { status: 400 })
+    }
+
     // Create campaign
     const campaign = await prisma.campaign.create({
       data: {
@@ -87,8 +90,7 @@ export async function POST(request: Request) {
       },
     })
 
-    if (sendNow) {
-      const fromAddress = process.env.EMAIL_FROM || 'noreply@meraki.app'
+    if (sendNow && mailer) {
       let sentCount = 0
 
       for (const lead of leads) {
@@ -108,8 +110,8 @@ export async function POST(request: Request) {
             emailBody = emailBody.replace(new RegExp(`{{${key}}}`, 'gi'), val)
           }
 
-          const { error: sendError } = await resend.emails.send({
-            from: fromAddress,
+          const { error: sendError } = await mailer.client.emails.send({
+            from: mailer.from,
             to: lead.email,
             subject,
             html: emailBody.replace(/\n/g, '<br>'),

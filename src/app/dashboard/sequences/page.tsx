@@ -26,6 +26,7 @@ import {
   GitBranch,
   Copy,
   Sparkles,
+  Pencil,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -98,6 +99,15 @@ interface SeqStep {
   body?: string | null
   templateId?: string | null
   taskTitle?: string | null
+  taskDescription?: string | null
+  linkedinAction?: string | null
+  linkedinMessage?: string | null
+  conditionType?: string | null
+  conditionValue?: string | null
+  trueGotoStep?: number | null
+  falseGotoStep?: number | null
+  useAiPersonalization?: boolean
+  aiPrompt?: string | null
 }
 
 interface Sequence {
@@ -124,6 +134,7 @@ export default function SequencesPage() {
   const [seqDesc, setSeqDesc] = useState('')
   const [seqTrigger, setSeqTrigger] = useState('MANUAL')
   const [steps, setSteps] = useState<StepDraft[]>([])
+  const [editingSeqId, setEditingSeqId] = useState<string | null>(null)
 
   // Enroll modal state
   const [enrollSeqId, setEnrollSeqId] = useState<string | null>(null)
@@ -156,9 +167,10 @@ export default function SequencesPage() {
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch('/api/sequences', {
-        method: 'POST',
+        method: editingSeqId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(editingSeqId ? { id: editingSeqId } : {}),
           name: seqName,
           description: seqDesc || undefined,
           triggerType: seqTrigger,
@@ -191,7 +203,7 @@ export default function SequencesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sequences'] })
       closeWizard()
-      toast({ title: 'Sequence created' })
+      toast({ title: editingSeqId ? 'Sequence updated' : 'Sequence created' })
     },
     onError: (err: Error) => {
       toast({ title: 'Error', description: err.message, variant: 'destructive' })
@@ -315,6 +327,36 @@ export default function SequencesPage() {
     setSteps([])
     setAddingStepType(null)
     setEditStepIdx(null)
+    setEditingSeqId(null)
+  }
+
+  const openEdit = (seq: Sequence) => {
+    setEditingSeqId(seq.id)
+    setSeqName(seq.name)
+    setSeqDesc(seq.description || '')
+    setSeqTrigger(seq.triggerType)
+    setSteps(
+      seq.steps.map((s) => ({
+        type: s.type as StepDraft['type'],
+        delayDays: s.delayDays,
+        delayHours: s.delayHours,
+        subject: s.subject ?? undefined,
+        body: s.body ?? undefined,
+        templateId: s.templateId ?? undefined,
+        taskTitle: s.taskTitle ?? undefined,
+        taskDescription: s.taskDescription ?? undefined,
+        linkedinAction: s.linkedinAction ?? undefined,
+        linkedinMessage: s.linkedinMessage ?? undefined,
+        conditionType: s.conditionType ?? undefined,
+        conditionValue: s.conditionValue ?? undefined,
+        trueGotoStep: s.trueGotoStep ?? undefined,
+        falseGotoStep: s.falseGotoStep ?? undefined,
+        useAiGenerate: s.useAiPersonalization ?? false,
+        aiContext: s.aiPrompt ?? undefined,
+      })),
+    )
+    setWizardStep(1)
+    setShowWizard(true)
   }
 
   const addStep = (type: string) => {
@@ -392,7 +434,7 @@ export default function SequencesPage() {
             {/* Header */}
             <div className="flex items-center justify-between border-b px-6 py-4">
               <div>
-                <h2 className="text-lg font-semibold">Create Sequence</h2>
+                <h2 className="text-lg font-semibold">{editingSeqId ? 'Edit Sequence' : 'Create Sequence'}</h2>
                 <p className="text-sm text-gray-500">Step {wizardStep} of 3</p>
               </div>
               <Button variant="ghost" size="icon" onClick={closeWizard}>
@@ -849,7 +891,9 @@ export default function SequencesPage() {
                   disabled={createMutation.isPending}
                 >
                   {createMutation.isPending ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</>
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{editingSeqId ? 'Saving...' : 'Creating...'}</>
+                  ) : editingSeqId ? (
+                    <><Check className="mr-2 h-4 w-4" />Save Changes</>
                   ) : (
                     <><Plus className="mr-2 h-4 w-4" />Create Sequence</>
                   )}
@@ -1089,6 +1133,15 @@ export default function SequencesPage() {
                       >
                         <Users className="mr-2 h-4 w-4" />
                         Enroll
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEdit(sequence)}
+                        title="View and edit steps"
+                      >
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
                       </Button>
                       <Button
                         variant="outline"

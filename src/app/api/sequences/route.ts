@@ -22,7 +22,7 @@ const createSequenceSchema = z.object({
   sendWindowEnd: z.number().min(0).max(23).nullable().default(null),
   sendTimezone: z.string().default('America/New_York'),
   sendDays: z.array(z.number().min(0).max(6)).default([1, 2, 3, 4, 5]),
-  dailySendLimit: z.number().min(1).max(10000).default(100),
+  dailySendLimit: z.number().min(1).max(10000).default(50),
   steps: z.array(z.object({
     type: z.enum(['EMAIL', 'LINKEDIN', 'TASK', 'WAIT', 'CONDITION']),
     delayDays: z.number().default(0),
@@ -227,6 +227,18 @@ export async function PATCH(request: Request) {
       where: { id },
       data: { status },
     })
+
+    // Activating makes paused enrollments (and active ones lacking a due date) due immediately
+    if (status === 'ACTIVE') {
+      const now = new Date()
+      await prisma.sequenceEnrollment.updateMany({
+        where: {
+          sequenceId: id,
+          OR: [{ status: 'PAUSED' }, { status: 'ACTIVE', nextStepAt: null }],
+        },
+        data: { status: 'ACTIVE', nextStepAt: now, lockedAt: null },
+      })
+    }
 
     return NextResponse.json({ data: updated, message: `Sequence ${status.toLowerCase()}` })
   } catch (error) {

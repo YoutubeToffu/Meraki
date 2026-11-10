@@ -327,6 +327,69 @@ export default function SettingsPage() {
     },
   })
 
+  const emailConfigQuery = useQuery({
+    queryKey: ['settings-email-config'],
+    queryFn: () =>
+      fetchJson<{
+        configured: boolean
+        config: { fromEmail: string; fromName: string | null; apiKeyLast4: string } | null
+      }>('/api/settings/email'),
+  })
+  const [sendingForm, setSendingForm] = useState({ fromEmail: '', fromName: '', apiKey: '' })
+
+  useEffect(() => {
+    const config = emailConfigQuery.data?.config
+    if (config) {
+      setSendingForm({ fromEmail: config.fromEmail, fromName: config.fromName || '', apiKey: '' })
+    }
+  }, [emailConfigQuery.data])
+
+  const sendingMutation = useMutation({
+    mutationFn: async (payload: typeof sendingForm) => {
+      const response = await fetch('/api/settings/email', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error || 'Failed to save')
+      return body
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings-email-config'] })
+      setSendingForm((current) => ({ ...current, apiKey: '' }))
+      toast({ title: 'Sending settings saved' })
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Unable to save sending settings', description: error.message, variant: 'destructive' })
+    },
+  })
+
+  const sendingTestMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/settings/email', { method: 'POST' })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error || 'Test failed')
+      return body
+    },
+    onSuccess: (body) => toast({ title: body.message }),
+    onError: (error: Error) => {
+      toast({ title: 'Test email failed', description: error.message, variant: 'destructive' })
+    },
+  })
+
+  const sendingRemoveMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/settings/email', { method: 'DELETE' })
+      if (!response.ok) throw new Error('Failed to remove')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings-email-config'] })
+      setSendingForm({ fromEmail: '', fromName: '', apiKey: '' })
+      toast({ title: 'Sending settings removed' })
+    },
+  })
+
   const isLoading = profileQuery.isLoading || organizationQuery.isLoading
   const hasError = profileQuery.isError || organizationQuery.isError
   const profile = profileQuery.data
@@ -624,6 +687,102 @@ export default function SettingsPage() {
                         >
                           {organizationMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                           Save Organization
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {activeSection === 'email' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Sending Provider (Resend)</CardTitle>
+                      <CardDescription>
+                        Emails from your workspace are sent with your own Resend account and from address.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {!canManageOrganization && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                          Only workspace owners and admins can change sending settings.
+                        </div>
+                      )}
+                      {!emailConfigQuery.data?.configured && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                          Not configured. Sequences, campaigns and AI outreach will not send until you add a Resend API key and from address.
+                        </div>
+                      )}
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">From Email</label>
+                          <Input
+                            type="email"
+                            placeholder="hello@yourdomain.com"
+                            value={sendingForm.fromEmail}
+                            disabled={!canManageOrganization}
+                            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                              setSendingForm((current) => ({ ...current, fromEmail: getInputValue(event) }))
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">From Name (optional)</label>
+                          <Input
+                            placeholder="Jane from Acme"
+                            value={sendingForm.fromName}
+                            disabled={!canManageOrganization}
+                            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                              setSendingForm((current) => ({ ...current, fromName: getInputValue(event) }))
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-sm font-medium">Resend API Key</label>
+                          <Input
+                            type="password"
+                            autoComplete="off"
+                            placeholder={
+                              emailConfigQuery.data?.config
+                                ? `Saved key ending in ${emailConfigQuery.data.config.apiKeyLast4} (leave blank to keep)`
+                                : 're_...'
+                            }
+                            value={sendingForm.apiKey}
+                            disabled={!canManageOrganization}
+                            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                              setSendingForm((current) => ({ ...current, apiKey: getInputValue(event) }))
+                            }
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            The from address must be on a domain verified in your Resend account. The key is stored encrypted and never shown again.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {emailConfigQuery.data?.configured && canManageOrganization && (
+                          <>
+                            <Button
+                              variant="outline"
+                              onClick={() => sendingRemoveMutation.mutate()}
+                              disabled={sendingRemoveMutation.isPending}
+                            >
+                              Remove
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => sendingTestMutation.mutate()}
+                              disabled={sendingTestMutation.isPending}
+                            >
+                              {sendingTestMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                              Send Test Email
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          onClick={() => sendingMutation.mutate(sendingForm)}
+                          disabled={!canManageOrganization || sendingMutation.isPending || !sendingForm.fromEmail}
+                        >
+                          {sendingMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Save Sending Settings
                         </Button>
                       </div>
                     </CardContent>

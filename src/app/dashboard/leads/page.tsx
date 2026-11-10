@@ -29,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   UserPlus,
+  MessageSquareReply,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 import {
@@ -279,6 +280,25 @@ export default function LeadsPage() {
     },
   })
 
+  const markRepliedMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/leads/${id}/replied`, { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to mark lead as replied')
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['sequences'] })
+      toast({
+        title: 'Marked as replied',
+        description: `Stopped ${data.sequencesStopped} sequence(s) and ${data.campaignsStopped} AI campaign(s) for this lead.`,
+      })
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+    },
+  })
+
   const toggleDncMutation = useMutation({
     mutationFn: async ({ id, doNotContact }: { id: string; doNotContact: boolean }) => {
       const res = await fetch(`/api/leads/${id}`, {
@@ -423,6 +443,7 @@ export default function LeadsPage() {
       company: ['company', 'organization', 'org', 'company name'],
       jobTitle: ['job title', 'jobtitle', 'title', 'position', 'role'],
       phone: ['phone', 'phone number', 'mobile', 'tel'],
+      location: ['location', 'city', 'address', 'region', 'country'],
       linkedinUrl: ['linkedin', 'linkedin url', 'linkedinurl', 'linkedin profile'],
       source: ['source', 'lead source'],
     }
@@ -450,6 +471,7 @@ export default function LeadsPage() {
         ['company', getIdx('company')],
         ['jobTitle', getIdx('jobTitle')],
         ['phone', getIdx('phone')],
+        ['location', getIdx('location')],
         ['linkedinUrl', getIdx('linkedinUrl')],
       ]
       for (const [key, idx] of map) {
@@ -462,7 +484,7 @@ export default function LeadsPage() {
       }
 
       try {
-        const res = await fetch('/api/leads', {
+        const res = await fetch('/api/leads?upsert=true', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(leadData),
@@ -472,7 +494,7 @@ export default function LeadsPage() {
     }
 
     queryClient.invalidateQueries({ queryKey: ['leads'] })
-    toast({ title: `Import complete: ${imported} added, ${failed} skipped` })
+    toast({ title: `Import complete: ${imported} added/updated, ${failed} skipped` })
   }
 
   function parseCSVRow(row: string): string[] {
@@ -873,6 +895,20 @@ export default function LeadsPage() {
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
                             <Linkedin className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-green-600"
+                            title="Mark as replied (stops sequences and AI campaigns)"
+                            disabled={markRepliedMutation.isPending}
+                            onClick={() => {
+                              if (confirm(`Mark ${lead.firstName} as replied? This stops all automated follow-ups for this lead.`)) {
+                                markRepliedMutation.mutate(lead.id)
+                              }
+                            }}
+                          >
+                            <MessageSquareReply className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"

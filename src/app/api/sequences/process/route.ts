@@ -1,12 +1,10 @@
 ﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Resend } from 'resend'
 import OpenAI from 'openai'
+import { getOrgMailer, EMAIL_NOT_CONFIGURED_MESSAGE, type OrgMailer } from '@/lib/email-config'
 
 export const dynamic = 'force-dynamic'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-const fromAddress = process.env.EMAIL_FROM || 'noreply@meraki.app'
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -39,6 +37,7 @@ export async function POST(request: Request) {
       WHERE id IN (
         SELECT id FROM "SequenceEnrollment"
         WHERE status = 'ACTIVE'
+          AND "sequenceId" IN (SELECT id FROM "Sequence" WHERE status = 'ACTIVE')
           AND "nextStepAt" <= ${now}
           AND ("lockedAt" IS NULL OR "lockedAt" < ${lockExpiry})
         LIMIT 50
@@ -97,6 +96,11 @@ export async function POST(request: Request) {
     todayStart.setHours(0, 0, 0, 0)
     const sequenceIds = Array.from(new Set(dueEnrollments.map((e) => e.sequenceId)))
     const dailyCounts = new Map<string, number>()
+    const mailers = new Map<string, OrgMailer | null>()
+    const getMailer = async (orgId: string) => {
+      if (!mailers.has(orgId)) mailers.set(orgId, await getOrgMailer(orgId))
+      return mailers.get(orgId) ?? null
+    }
     for (const seqId of sequenceIds) {
       const count = await prisma.email.count({
         where: {
@@ -135,6 +139,23 @@ export async function POST(request: Request) {
         details.push({ enrollmentId: enrollment.id, action: 'do_not_contact_skip' })
         skipped++
         continue
+      }
+
+      // === REPLY CHECK ===
+      if (sequence.exitOnReply) {
+        const replied = await prisma.email.findFirst({
+          where: { leadId: lead.id, repliedAt: { not: null } },
+          select: { id: true },
+        })
+        if (replied) {
+          await prisma.sequenceEnrollment.update({
+            where: { id: enrollment.id },
+            data: { status: 'COMPLETED', completedAt: now, nextStepAt: null, lockedAt: null },
+          })
+          details.push({ enrollmentId: enrollment.id, action: 'replied_stop' })
+          skipped++
+          continue
+        }
       }
 
       // === BOUNCED LEAD FILTER ===
@@ -219,6 +240,27 @@ export async function POST(request: Request) {
 
       try {
         if (step.type === 'EMAIL') {
+          // Each tenant sends with its own Resend key and from address
+          if (lead.organizationId !== sequence.organizationId) {
+            await prisma.sequenceEnrollment.update({
+              where: { id: enrollment.id },
+              data: { status: 'PAUSED', nextStepAt: null, lockedAt: null },
+            })
+            details.push({ enrollmentId: enrollment.id, action: 'org_mismatch_skip' })
+            skipped++
+            continue
+          }
+          const mailer = await getMailer(sequence.organizationId)
+          if (!mailer) {
+            await prisma.sequenceEnrollment.update({
+              where: { id: enrollment.id },
+              data: { lockedAt: null },
+            })
+            details.push({ enrollmentId: enrollment.id, action: 'email_not_configured', error: EMAIL_NOT_CONFIGURED_MESSAGE })
+            skipped++
+            continue
+          }
+
           let subject = step.subject || ''
           let body = step.body || ''
 
@@ -286,8 +328,8 @@ export async function POST(request: Request) {
               + trackingPixel
               + `<br><p style="font-size:11px;color:#999;margin-top:20px;">If you no longer wish to receive these emails, <a href="${unsubscribeLink}" style="color:#999;">unsubscribe here</a>.</p>`
 
-            const { data: sendData, error: sendError } = await resend.emails.send({
-              from: fromAddress,
+            const { data: sendData, error: sendError } = await mailer.client.emails.send({
+              from: mailer.from,
               to: lead.email,
               subject: personalizedSubject,
               html: htmlBody,

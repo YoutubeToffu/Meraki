@@ -19,6 +19,8 @@ import {
   FileText,
   LogOut,
   Bot,
+  Share2,
+  Search,
 } from 'lucide-react'
 
 const navigation = [
@@ -81,6 +83,16 @@ const navigation = [
     name: 'Analytics',
     href: '/dashboard/analytics',
     icon: BarChart3,
+  },
+  {
+    name: 'Search Console',
+    href: '/dashboard/search-console',
+    icon: Search,
+  },
+  {
+    name: 'Social',
+    href: '/dashboard/social',
+    icon: Share2,
   },
   {
     name: 'Integrations',

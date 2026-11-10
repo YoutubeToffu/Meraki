@@ -13,6 +13,7 @@ const createLeadSchema = z.object({
   company: z.string().optional(),
   jobTitle: z.string().optional(),
   phone: z.string().optional(),
+  location: z.string().optional(),
   linkedinUrl: z.string().url().optional(),
   website: z.string().url().optional(),
   source: z.enum([
@@ -102,6 +103,25 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const validatedData = createLeadSchema.parse(body)
+
+    // Import mode: update an existing lead (matched by email) with the provided non-empty values
+    if (new URL(request.url).searchParams.get('upsert') === 'true') {
+      const existing = await prisma.lead.findFirst({
+        where: { email: { equals: validatedData.email, mode: 'insensitive' }, organizationId: orgId },
+      })
+      if (existing) {
+        const { email: _email, source, tags, ...rest } = validatedData
+        const updated = await prisma.lead.update({
+          where: { id: existing.id },
+          data: {
+            ...rest,
+            ...(body.source ? { source } : {}),
+            ...(tags ? { tags } : {}),
+          },
+        })
+        return NextResponse.json({ data: updated, message: 'Lead updated successfully' })
+      }
+    }
 
     const lead = await prisma.lead.create({
       data: {

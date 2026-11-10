@@ -1,13 +1,11 @@
 ﻿import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Resend } from 'resend'
 import OpenAI from 'openai'
+import { getOrgMailer, EMAIL_NOT_CONFIGURED_MESSAGE } from '@/lib/email-config'
 
 export const dynamic = 'force-dynamic'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-const fromAddress = process.env.EMAIL_FROM || 'noreply@meraki.app'
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 // POST /api/autopilot/process â€” The AI Brain
@@ -42,6 +40,13 @@ export async function POST(request: Request) {
     const details: { campaignId: string; outreachId: string; action: string; error?: string }[] = []
 
     for (const campaign of campaigns) {
+      // Each tenant sends with its own Resend key and from address
+      const mailer = await getOrgMailer(campaign.organizationId)
+      if (!mailer) {
+        details.push({ campaignId: campaign.id, outreachId: '', action: 'email_not_configured', error: EMAIL_NOT_CONFIGURED_MESSAGE })
+        totalSkipped++
+        continue
+      }
       // Check sending window
       if (campaign.sendWindowStart != null && campaign.sendWindowEnd != null) {
         let currentHour: number
@@ -228,8 +233,8 @@ export async function POST(request: Request) {
               + trackingPixel
               + `<br><p style="font-size:11px;color:#999;margin-top:20px;">If you no longer wish to receive these emails, <a href="${unsubscribeLink}" style="color:#999;">unsubscribe here</a>.</p>`
 
-            const { data: sendData, error: sendError } = await resend.emails.send({
-              from: fromAddress,
+            const { data: sendData, error: sendError } = await mailer.client.emails.send({
+              from: mailer.from,
               to: lead.email,
               subject,
               html: htmlBody,

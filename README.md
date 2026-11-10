@@ -325,3 +325,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 <div align="center">
   <p>Built with ❤️ for startups that want to grow</p>
 </div>
+
+## Social Publishing
+
+Posts are created under **Dashboard > Social**, must be approved by the workspace **Owner**, then published to connected accounts.
+
+- After pulling: stop the dev server, run `npx prisma generate` and `npm run db:push`.
+- Env: `CRON_SECRET` (scheduler auth), `ENCRYPTION_KEY` (token encryption), `OPENAI_API_KEY` (AI drafting), `NEXT_PUBLIC_APP_URL`.
+- Schedule `GET /api/social/process` every few minutes with header `Authorization: Bearer <CRON_SECRET>`.
+- Accounts are connected by pasted access token (no OAuth yet). YouTube is unsupported, Instagram is image-only, TikTok needs a video URL.

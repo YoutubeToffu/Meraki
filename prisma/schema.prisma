@@ -34,6 +34,22 @@ model Organization {
   aiCampaigns AiCampaign[]
   aiCredits   Int      @default(1000)
   onboardingSession OnboardingSession?
+  emailConfig EmailConfig?
+  socialAccounts SocialAccount[]
+  socialPosts    SocialPost[]
+}
+
+model EmailConfig {
+  id             String   @id @default(cuid())
+  fromEmail      String
+  fromName       String?
+  apiKeyEnc      String   @db.Text
+  apiKeyLast4    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model User {
@@ -60,6 +76,9 @@ model User {
   activities     Activity[]
   sentEmails     Email[]
   scheduledMeetings Meeting[]
+  socialPostsCreated  SocialPost[]      @relation("SocialPostCreatedBy")
+  socialPostsApproved SocialPost[]      @relation("SocialPostApprovedBy")
+  socialPostEvents    SocialPostEvent[]
 }
 
 enum Plan {
@@ -278,7 +297,7 @@ model Sequence {
   sendDays        Int[]   @default([1, 2, 3, 4, 5]) // 0=Sun, 1=Mon..6=Sat
   
   // Daily throttle
-  dailySendLimit  Int     @default(100)
+  dailySendLimit  Int     @default(50)
   
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -517,6 +536,139 @@ enum MeetingStatus {
 }
 
 // ============================================
+// SOCIAL PUBLISHING
+// ============================================
+
+enum SocialPlatform {
+  LINKEDIN
+  FACEBOOK
+  X
+  INSTAGRAM
+  THREADS
+  YOUTUBE
+  PINTEREST
+  TIKTOK
+  WORDPRESS
+  MEDIUM
+}
+
+enum SocialAccountStatus {
+  CONNECTED
+  EXPIRED
+  ERROR
+}
+
+enum SocialPostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  CHANGES_REQUESTED
+  REJECTED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  PARTIALLY_PUBLISHED
+  FAILED
+}
+
+enum SocialTargetStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+model SocialAccount {
+  id           String              @id @default(cuid())
+  platform     SocialPlatform
+  displayName  String
+  externalId   String              // page id, person URN, user id, site URL, etc.
+  accessTokenEnc  String           @db.Text
+  refreshTokenEnc String?          @db.Text
+  expiresAt    DateTime?
+  status       SocialAccountStatus @default(CONNECTED)
+  lastError    String?
+  metadata     Json?               // platform extras (boardId, siteUrl, username)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  targets SocialPostTarget[]
+
+  @@unique([organizationId, platform, externalId])
+  @@index([organizationId])
+}
+
+model SocialPost {
+  id          String           @id @default(cuid())
+  title       String?
+  content     String           @db.Text
+  linkUrl     String?
+  mediaUrls   String[]
+  hashtags    String[]
+  status      SocialPostStatus @default(DRAFT)
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  lockedAt    DateTime?        // processor lock while publishing
+
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  reviewNote      String?      @db.Text
+  aiGenerated     Boolean      @default(false)
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById  String
+  createdBy    User   @relation("SocialPostCreatedBy", fields: [createdById], references: [id])
+  approvedById String?
+  approvedBy   User?  @relation("SocialPostApprovedBy", fields: [approvedById], references: [id])
+
+  targets SocialPostTarget[]
+  events  SocialPostEvent[]
+
+  @@index([organizationId, status])
+  @@index([status, scheduledAt])
+}
+
+model SocialPostTarget {
+  id            String             @id @default(cuid())
+  contentOverride String?          @db.Text // platform-specific variant; null = use master content
+  status        SocialTargetStatus @default(PENDING)
+  attempts      Int                @default(0)
+  nextAttemptAt DateTime?
+  lastError     String?
+  externalPostId String?
+  externalUrl   String?
+  publishedAt   DateTime?
+
+  postId    String
+  post      SocialPost    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  accountId String
+  account   SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, accountId])
+  @@index([status, nextAttemptAt])
+}
+
+model SocialPostEvent {
+  id        String   @id @default(cuid())
+  action    String   // CREATED, EDITED, SUBMITTED, APPROVED, REJECTED, CHANGES_REQUESTED, PUBLISHED, FAILED ...
+  note      String?  @db.Text
+  createdAt DateTime @default(now())
+
+  postId String
+  post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String?
+  user   User?      @relation(fields: [userId], references: [id])
+
+  @@index([postId, createdAt])
+}
+
+// ============================================
 // INTEGRATIONS
 // ============================================
 
@@ -552,6 +704,7 @@ enum IntegrationType {
   CALENDLY
   ZOOM
   GOOGLE_CALENDAR
+  GOOGLE_SEARCH_CONSOLE
   WEBHOOK
 }
 

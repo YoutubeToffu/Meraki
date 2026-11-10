@@ -2,11 +2,9 @@
 import { z } from 'zod'
 import prisma from '@/lib/prisma'
 import { getRequiredSession, handleAuthError } from '@/lib/auth-helpers'
-import { Resend } from 'resend'
+import { getOrgMailer, EMAIL_NOT_CONFIGURED_MESSAGE } from '@/lib/email-config'
 
 export const dynamic = 'force-dynamic'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 const sendEmailSchema = z.object({
   leadIds: z.array(z.string()).min(1, 'At least one lead is required'),
@@ -40,13 +38,16 @@ export async function POST(request: Request) {
       )
     }
 
-    const fromAddress = process.env.EMAIL_FROM || 'noreply@meraki.app'
+    const mailer = await getOrgMailer(orgId)
+    if (!mailer) {
+      return NextResponse.json({ error: EMAIL_NOT_CONFIGURED_MESSAGE }, { status: 400 })
+    }
     const results: { leadId: string; success: boolean; error?: string }[] = []
 
     for (const lead of leads) {
       try {
-        const { error: sendError } = await resend.emails.send({
-          from: fromAddress,
+        const { error: sendError } = await mailer.client.emails.send({
+          from: mailer.from,
           to: lead.email,
           subject,
           html: body.replace(/\n/g, '<br>'),
